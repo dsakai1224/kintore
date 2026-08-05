@@ -840,7 +840,7 @@ function recommendExercises(n = 3) {
 /* ---------- 標準的な実施重量・回数の提案 ----------
    優先順: ①その種目の履歴があれば推定1RMの80%(=10RM相当) ②自重種目はトレ歴別の標準回数
    ③体重×トレ歴の標準比(STD_RX) ④どれも無ければ一般則のみ。回数は筋肥大の基本レンジから10回。 */
-function roundLoad(w) { return w >= 20 ? Math.round(w / 2.5) * 2.5 : Math.round(w * 2) / 2; }
+function roundLoad(w) { return Math.max(2.5, Math.round(w / 2.5) * 2.5); } // 2.5kg刻み(ジムのフリーウェイト単位)
 function suggestPrescription(ex) {
   if (!ex || ex.time) return null;
   const p = state.settings.profile || {};
@@ -854,7 +854,7 @@ function suggestPrescription(ex) {
   const rx = STD_RX[ex.id];
   const lvl = { b: 0, i: 1, a: 2 }[p.exp] != null ? { b: 0, i: 1, a: 2 }[p.exp] : 0;
   if (rx && rx.reps) return { w: 0, r: rx.reps[lvl], sets: nSets, src: 'トレ歴の標準' };
-  if (rx && rx.bw && +p.bw > 0) return { w: Math.max(0.5, roundLoad(p.bw * rx.bw[lvl])), r: 10, sets: nSets, ph: !!rx.ph, src: '体重×トレ歴の標準' };
+  if (rx && rx.bw && +p.bw > 0) return { w: roundLoad(p.bw * rx.bw[lvl]), r: 10, sets: nSets, ph: !!rx.ph, src: '体重×トレ歴の標準' };
   return { w: null, r: 10, sets: nSets, src: null };
 }
 
@@ -1508,7 +1508,8 @@ function renderRecord() {
   };
   bindTop(); bindList();
 
-  $$('.chips button[data-cat]', el).forEach(b => b.addEventListener('click', () => { recCat = b.dataset.cat; renderRecord(); }));
+  // カテゴリ選択時は検索文字をクリアして、その部位の全種目を表示する
+  $$('.chips button[data-cat]', el).forEach(b => b.addEventListener('click', () => { recCat = b.dataset.cat; recSearch = ''; renderRecord(); }));
   // 検索: 入力欄は作り直さず、下のリストだけを更新する(作り直すと日本語IMEの変換が確定できなくなるため)
   // 「ルーティン/今週のおすすめ」は突然消さず、上へスライドして畳む
   const si = $('#exSearch', el);
@@ -1586,23 +1587,24 @@ function startDraft(exId, log=null) {
    ダブルプログレッション方式(8〜12回レンジ):
    ・重量ありで前回12回以上 → 重量を1段階アップ(20kg未満:+1kg / 以上:+2.5kg)して8回に戻す
    ・それ以外(自重含む) → 回数を+1 */
+/* ジムのフリーウェイトに合わせ、提示する重量はすべて2.5kg刻みに丸める */
 function progressSets(sets) {
   return sets.map(s => {
     const w = +s.w || 0, r = +s.r || 0;
     if (w > 0 && r >= 12) {
-      const inc = w < 20 ? 1 : 2.5;
-      return { w: Math.round((w + inc) * 100) / 100, r: 8 };
+      const nw = Math.ceil((w + 0.01) / 2.5) * 2.5; // 現在より上の2.5kg刻みへ
+      return { w: nw, r: 8 };
     }
     return { w, r: r + 1 };
   });
 }
-// 控えめ(体調いまいちな日): 重量は約-10%(0.5kg刻みで切り下げ)・回数キープ、自重は回数-30%
+// 控えめ(体調いまいちな日): 重量は約-10%を2.5kg刻みに切り下げ・回数キープ、自重は回数-30%
 function deloadSets(sets) {
   return sets.map(s => {
     const w = +s.w || 0, r = +s.r || 0;
     if (w > 0) {
-      const nw = Math.max(0.5, Math.floor(w * 0.9 * 2) / 2);
-      return { w: nw, r };
+      const nw = Math.max(2.5, Math.floor(w * 0.9 / 2.5) * 2.5);
+      return { w: Math.min(nw, w), r };
     }
     return { w: 0, r: Math.max(1, Math.ceil(r * 0.7)) };
   });
@@ -1705,7 +1707,7 @@ function renderSetEditor(el) {
           <button class="copybtn" id="copyLast" style="flex:1 1 auto;">⧉ そのまま</button>
           ${timeMode ? '' : '<button class="copybtn olbtn" id="overloadLast" style="flex:1 1 auto;">📈 オーバーロード</button>'}
         </div>
-        ${timeMode ? '' : '<div class="muted" style="margin-top:6px;font-size:11px;">🌙 = 重量-10%で回数キープ(自重は回数-30%)。📈 = 前回12回以上のセットは重量アップ(+2.5kg/軽い種目は+1kg)して8回に、それ以外は+1回。</div>'}
+        ${timeMode ? '' : '<div class="muted" style="margin-top:6px;font-size:11px;">🌙 = 重量-10%で回数キープ(自重は回数-30%)。📈 = 前回12回以上のセットは重量アップして8回に、それ以外は+1回。提示重量はジムのプレートに合わせて2.5kg刻み。</div>'}
       </div>` : ''}
       ${sugHTML}
       <div class="set-head"><span>ｾｯﾄ</span><span>${timeMode?'負荷・速度など(任意)':'重さ kg (0=自重)'}</span><span>${timeMode?'分':'回数'}</span><span>${timeMode?'':'RM'}</span><span></span></div>
