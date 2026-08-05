@@ -42,35 +42,64 @@
   --good: #0ca30c;
   --sheet-shadow: 0 -8px 30px rgba(0,0,0,0.18);
 }
+/* ダーク配色(視認性改善版): 文字・罫線のコントラストを上げ、ヒートは「熱いほど明るい」ランプに */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --surface-1: #1a1a19;
-    --page: #0d0d0d;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-    --grid: #2c2c2a;
-    --baseline: #383835;
-    --border: rgba(255,255,255,0.10);
-    --series-1: #3987e5;
-    --accent: #e0554a;
+    --surface-1: #1d1d1b;
+    --page: #101010;
+    --text-primary: #f5f4f1;
+    --text-secondary: #cfcec9;
+    --text-muted: #a3a19a;
+    --grid: #343431;
+    --baseline: #4a4a45;
+    --border: rgba(255,255,255,0.16);
+    --series-1: #5d9ceb;
+    --accent: #f0685c;
     --accent-ink: #ffffff;
-    --hdr: #c22e24;
+    --hdr: #b02a21;
     --hdr-ink: #ffffff;
     --fab: #2bb552;
-    --heat-0: #2c2c2a;
-    --heat-1: #5a1715;
-    --heat-2: #8f2220;
-    --heat-3: #b93630;
-    --heat-4: #d95347;
-    --heat-5: #ef7f6c;
-    --heat-6: #f8ab97;
-    --star: #eda100;
-    --danger: #e66767;
-    --good: #0ca30c;
-    --sheet-shadow: 0 -8px 30px rgba(0,0,0,0.5);
+    --heat-0: #30302d;
+    --heat-1: #6d2521;
+    --heat-2: #96322b;
+    --heat-3: #c04436;
+    --heat-4: #e0604c;
+    --heat-5: #f28a6c;
+    --heat-6: #ffb49d;
+    --star: #f5b433;
+    --danger: #ef7d7d;
+    --good: #3fbf3f;
+    --sheet-shadow: 0 -8px 30px rgba(0,0,0,0.55);
   }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1: #1d1d1b;
+  --page: #101010;
+  --text-primary: #f5f4f1;
+  --text-secondary: #cfcec9;
+  --text-muted: #a3a19a;
+  --grid: #343431;
+  --baseline: #4a4a45;
+  --border: rgba(255,255,255,0.16);
+  --series-1: #5d9ceb;
+  --accent: #f0685c;
+  --accent-ink: #ffffff;
+  --hdr: #b02a21;
+  --hdr-ink: #ffffff;
+  --fab: #2bb552;
+  --heat-0: #30302d;
+  --heat-1: #6d2521;
+  --heat-2: #96322b;
+  --heat-3: #c04436;
+  --heat-4: #e0604c;
+  --heat-5: #f28a6c;
+  --heat-6: #ffb49d;
+  --star: #f5b433;
+  --danger: #ef7d7d;
+  --good: #3fbf3f;
+  --sheet-shadow: 0 -8px 30px rgba(0,0,0,0.55);
 }
 * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
 html { height:100%; }
@@ -83,7 +112,13 @@ body {
   line-height: 1.5;
   padding-bottom: calc(64px + env(safe-area-inset-bottom));
 }
-.app { max-width: 520px; margin: 0 auto; padding: 12px 14px 24px; }
+/* コンテンツが短いタブ(空の履歴など)でもページの高さを一定に保ち、
+   iOSのツールバー/タブバーがぐいっと動くのを防ぐ */
+.app {
+  max-width: 520px; margin: 0 auto; padding: 12px 14px 24px;
+  min-height: calc(100vh - 120px);
+  min-height: calc(100svh - 120px);
+}
 .topbar {
   position: sticky; top: 0; z-index: 30;
   background: var(--hdr); color: var(--hdr-ink);
@@ -1342,51 +1377,50 @@ function renderRecord() {
       ${right}</div>`;
   };
 
-  // ルーティン
-  const activeRt = recRoutine ? state.routines.find(r=>r.id===recRoutine) : null;
-  if (recRoutine && !activeRt) recRoutine = null;
-  const doneToday = new Set(state.logs.filter(l=>l.date===today()).map(l=>l.exId));
-  let rtHTML = '';
-  if (activeRt) {
-    const doneN = activeRt.exIds.filter(id=>doneToday.has(id)).length;
-    rtHTML = `
-    <div class="sectionhead"><span>📋 ${esc(activeRt.name)}(${doneN}/${activeRt.exIds.length} 完了)</span><button id="rtQuit">終了</button></div>
-    <div class="card" style="padding:2px 14px;"><div class="exlist">
-      ${activeRt.exIds.map(id => {
-        const e = exById(id); if (!e) return '';
-        const done = doneToday.has(id);
-        const musc = Object.entries(e.m).sort((a,b)=>b[1]-a[1]).map(([mid])=>MUSCLE_BY_ID[mid].short).slice(0,4).join('・');
-        return `<div class="exrow" data-ex="${id}">
-          <button class="exmain" data-ex="${id}"${done?' style="opacity:0.5;"':''}><span>${done?'✅':'⬜'} ${esc(e.name)}<br><span class="exmeta">${musc}</span></span></button>
-        </div>`;
-      }).join('')}
-    </div></div>`;
-  } else if (state.routines.length && !recSearch && recCat === 'すべて') {
-    rtHTML = `<div class="sectionhead"><span>📋 ルーティン</span></div>
-    <div class="chips">${state.routines.map(r=>`<button data-rt="${r.id}">${esc(r.name)}</button>`).join('')}</div>`;
-  }
+  // ルーティン+おすすめ(検索ボックスの上に出る部分)
+  const buildTopHTML = () => {
+    const activeRt = recRoutine ? state.routines.find(r=>r.id===recRoutine) : null;
+    if (recRoutine && !activeRt) recRoutine = null;
+    const doneToday = new Set(state.logs.filter(l=>l.date===today()).map(l=>l.exId));
+    let rtHTML = '';
+    if (activeRt) {
+      const doneN = activeRt.exIds.filter(id=>doneToday.has(id)).length;
+      rtHTML = `
+      <div class="sectionhead"><span>📋 ${esc(activeRt.name)}(${doneN}/${activeRt.exIds.length} 完了)</span><button id="rtQuit">終了</button></div>
+      <div class="card" style="padding:2px 14px;"><div class="exlist">
+        ${activeRt.exIds.map(id => {
+          const e = exById(id); if (!e) return '';
+          const done = doneToday.has(id);
+          const musc = Object.entries(e.m).sort((a,b)=>b[1]-a[1]).map(([mid])=>MUSCLE_BY_ID[mid].short).slice(0,4).join('・');
+          return `<div class="exrow" data-ex="${id}">
+            <button class="exmain" data-ex="${id}"${done?' style="opacity:0.5;"':''}><span>${done?'✅':'⬜'} ${esc(e.name)}<br><span class="exmeta">${musc}</span></span></button>
+          </div>`;
+        }).join('')}
+      </div></div>`;
+    } else if (state.routines.length && !recSearch && recCat === 'すべて') {
+      rtHTML = `<div class="sectionhead"><span>📋 ルーティン</span></div>
+      <div class="chips">${state.routines.map(r=>`<button data-rt="${r.id}">${esc(r.name)}</button>`).join('')}</div>`;
+    }
+    const recs = (!recSearch && recCat === 'すべて' && !activeRt) ? recommendExercises(3) : [];
+    const recHTML = recs.length ? `
+      <div class="sectionhead"><span>💡 今週のおすすめ(マップの不足部位から)</span></div>
+      <div class="card" style="padding:2px 14px;"><div class="exlist">
+        ${recs.map(r=>`<div class="exrow" data-ex="${r.e.id}">
+          <button class="exmain" data-ex="${r.e.id}"><span>${esc(r.e.name)}<br><span class="exmeta">不足: ${r.reason}セット</span></span></button>
+        </div>`).join('')}
+      </div></div>` : '';
+    return rtHTML + recHTML;
+  };
 
-  // 今週のおすすめ(検索・絞り込み・ルーティン実行中は非表示)
-  const recs = (!recSearch && recCat === 'すべて' && !activeRt) ? recommendExercises(3) : [];
-  const recHTML = recs.length ? `
-    <div class="sectionhead"><span>💡 今週のおすすめ(マップの不足部位から)</span></div>
-    <div class="card" style="padding:2px 14px;"><div class="exlist">
-      ${recs.map(r=>`<div class="exrow" data-ex="${r.e.id}">
-        <button class="exmain" data-ex="${r.e.id}"><span>${esc(r.e.name)}<br><span class="exmeta">不足: ${r.reason}セット</span></span></button>
-      </div>`).join('')}
-    </div></div>` : '';
-
-  const cats = ['すべて', ...CATS];
-  el.innerHTML = `
-    ${rtHTML}
-    ${recHTML}
-    <div class="chips">${cats.map(c=>`<button data-cat="${c}" class="${c===recCat?'active':''}">${c}</button>`).join('')}</div>
-    <div class="row" style="margin-bottom:10px;">
-      <input type="search" id="exSearch" placeholder="種目を検索" value="${esc(recSearch)}" style="flex:1;min-width:0;">
-      <select id="sortSel" style="flex:0 0 auto;font-size:13px;padding:10px 8px;">
-        ${SORT_MODES.map(([v,l])=>`<option value="${v}" ${v===sortMode?'selected':''}>${l}</option>`).join('')}
-      </select>
-    </div>
+  // 種目リスト(検索ボックスの下に出る部分)
+  const buildListHTML = () => {
+    const favSet = new Set(state.favorites);
+    const favs = state.favorites.map(exById).filter(Boolean).filter(filter);
+    const others = allExercises().filter(e => filter(e) && !favSet.has(e.id));
+    if (sortMode === 'recent') others.sort((a,b) => (lastDate[b.id]||'') > (lastDate[a.id]||'') ? 1 : -1);
+    if (sortMode === 'name') others.sort((a,b) => a.name.localeCompare(b.name, 'ja'));
+    if (sortMode === 'cat') others.sort((a,b) => (CATS.indexOf(a.cat)-CATS.indexOf(b.cat)) || a.name.localeCompare(b.name,'ja'));
+    return `
     ${favs.length ? `<div class="sectionhead"><span>★ お気に入り</span>
       ${state.favorites.length>1 ? `<button id="reorderBtn">${reorderMode?'完了':'並び替え'}</button>` : ''}</div>
     <div class="card" style="padding:2px 14px;"><div class="exlist" id="favList">${favs.map(e=>rowHTML(e,true)).join('')}</div></div>` : ''}
@@ -1394,28 +1428,51 @@ function renderRecord() {
     <div class="card" style="padding:2px 14px;"><div class="exlist">
       ${others.map(e=>rowHTML(e,false)).join('') || '<div class="empty">該当する種目がありません</div>'}
     </div></div>`;
+  };
+
+  const cats = ['すべて', ...CATS];
+  el.innerHTML = `
+    <div id="topWrap">${buildTopHTML()}</div>
+    <div class="chips">${cats.map(c=>`<button data-cat="${c}" class="${c===recCat?'active':''}">${c}</button>`).join('')}</div>
+    <div class="row" style="margin-bottom:10px;">
+      <input type="search" id="exSearch" placeholder="種目を検索" value="${esc(recSearch)}" style="flex:1;min-width:0;">
+      <select id="sortSel" style="flex:0 0 auto;font-size:13px;padding:10px 8px;">
+        ${SORT_MODES.map(([v,l])=>`<option value="${v}" ${v===sortMode?'selected':''}>${l}</option>`).join('')}
+      </select>
+    </div>
+    <div id="listWrap">${buildListHTML()}</div>`;
+
+  const bindTop = () => {
+    $$('#topWrap button[data-rt]', el).forEach(b => b.addEventListener('click', () => { recRoutine = b.dataset.rt; renderRecord(); }));
+    const rq = $('#rtQuit', el);
+    if (rq) rq.addEventListener('click', () => { recRoutine = null; renderRecord(); });
+    $$('#topWrap .exmain', el).forEach(b => b.addEventListener('click', () => startDraft(b.dataset.ex)));
+  };
+  const bindList = () => {
+    $$('#listWrap .exmain', el).forEach(b => b.addEventListener('click', () => { if (!reorderMode) startDraft(b.dataset.ex); }));
+    $$('#listWrap button[data-star]', el).forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.star;
+      if (state.favorites.includes(id)) state.favorites = state.favorites.filter(f=>f!==id);
+      else state.favorites.push(id);
+      saveState(); renderRecord();
+    }));
+    const rb = $('#reorderBtn', el);
+    if (rb) rb.addEventListener('click', () => { reorderMode = !reorderMode; renderRecord(); });
+    const favList = $('#favList', el);
+    if (favList && reorderMode) enableDragSort(favList);
+  };
+  bindTop(); bindList();
 
   $$('.chips button[data-cat]', el).forEach(b => b.addEventListener('click', () => { recCat = b.dataset.cat; renderRecord(); }));
-  $$('button[data-rt]', el).forEach(b => b.addEventListener('click', () => { recRoutine = b.dataset.rt; renderRecord(); }));
-  const rq = $('#rtQuit', el);
-  if (rq) rq.addEventListener('click', () => { recRoutine = null; renderRecord(); });
+  // 検索: 入力欄は作り直さず、下のリストだけを更新する(作り直すと日本語IMEの変換が確定できなくなるため)
   const si = $('#exSearch', el);
-  si.addEventListener('input', () => { recSearch = si.value;
-    // リストだけ再描画するとフォーカスが飛ぶので入力は保持して再描画
-    const pos = si.selectionStart; renderRecord(); const ni=$('#exSearch'); ni.focus(); ni.setSelectionRange(pos,pos);
+  si.addEventListener('input', () => {
+    recSearch = si.value;
+    $('#topWrap', el).innerHTML = buildTopHTML();
+    $('#listWrap', el).innerHTML = buildListHTML();
+    bindTop(); bindList();
   });
   $('#sortSel', el).addEventListener('change', e => { state.settings.sortMode = e.target.value; saveState(); renderRecord(); });
-  const rb = $('#reorderBtn', el);
-  if (rb) rb.addEventListener('click', () => { reorderMode = !reorderMode; renderRecord(); });
-  $$('.exmain', el).forEach(b => b.addEventListener('click', () => { if (!reorderMode) startDraft(b.dataset.ex); }));
-  $$('button[data-star]', el).forEach(b => b.addEventListener('click', () => {
-    const id = b.dataset.star;
-    if (favSet.has(id)) state.favorites = state.favorites.filter(f=>f!==id);
-    else state.favorites.push(id);
-    saveState(); renderRecord();
-  }));
-  const favList = $('#favList', el);
-  if (favList && reorderMode) enableDragSort(favList);
 }
 
 // お気に入りのドラッグ&ドロップ並び替え(タッチ/マウス両対応)
@@ -1890,6 +1947,14 @@ function renderSettings() {
           ${REST_CHOICES.map(s=>`<option value="${s}" ${s===restChoice()?'selected':''}>${s}秒</option>`).join('')}
         </select>
       </div>
+      <div class="setting-row">
+        <label for="themeSel">表示テーマ</label>
+        <select id="themeSel" style="width:170px;">
+          <option value="auto" ${!state.settings.theme||state.settings.theme==='auto'?'selected':''}>自動(端末に合わせる)</option>
+          <option value="light" ${state.settings.theme==='light'?'selected':''}>ライト固定</option>
+          <option value="dark" ${state.settings.theme==='dark'?'selected':''}>ダーク固定</option>
+        </select>
+      </div>
       <div class="muted" style="margin-top:6px;">部位ごとの目標 = 基準 × 部位係数。大きくて直接刺激が必要な部位(四頭・広背・胸)は多めに、コンパウンドで間接的に稼がれやすい部位(臀部・起立筋・前腕など)は少なめに自動調整されます。優先部位はさらに+25%。</div>
       <div class="muted" style="margin-top:6px;"><b>現在の部位別目標:</b> ${MUSCLES.map(m=>`${m.short} ${targetFor(m.id)}${state.settings.muscleTargets[m.id]?'★':''}`).join('、')}${Object.keys(state.settings.muscleTargets).length?' (★=優先部位)':''}</div>
     </div>
@@ -1981,6 +2046,10 @@ function renderSettings() {
     state.settings.restSec = +e.target.value || 60;
     saveState(); toast('休憩秒数を更新しました');
   });
+  $('#themeSel').addEventListener('change', e => {
+    state.settings.theme = e.target.value;
+    saveState(); applyTheme(); toast('テーマを変更しました');
+  });
   $('#cAdd').addEventListener('click', () => {
     const name = $('#cName').value.trim();
     if (!name) { toast('種目名を入力してください'); return; }
@@ -2055,6 +2124,13 @@ function renderSettings() {
 }
 
 /* ---------- 初期化 ---------- */
+// 表示テーマ: auto=端末設定に追従 / light・darkは強制
+function applyTheme() {
+  const t = state.settings.theme || 'auto';
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+}
+applyTheme();
 $('#todayLabel').textContent = jpDate(today());
 render();
 // PWA: httpで配信されている場合のみオフライン用のservice workerを登録(ローカルファイルでは何もしない)
