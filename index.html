@@ -184,6 +184,9 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 .view.active { display:block; }
 
 /* ---- record view ---- */
+/* 検索中は「ルーティン/今週のおすすめ」を上にスライドして畳む */
+#topWrap { overflow:hidden; transition: max-height .35s ease, opacity .25s ease; }
+#topWrap.collapsed { max-height: 0 !important; opacity: 0; }
 .chips { display:flex; gap:6px; overflow-x:auto; padding: 2px 0 8px; scrollbar-width:none; }
 .chips::-webkit-scrollbar { display:none; }
 .chips button {
@@ -518,6 +521,26 @@ const MUSCLES = [
 ];
 const MUSCLE_BY_ID = Object.fromEntries(MUSCLES.map(m=>[m.id,m]));
 
+// 部位シート用: 筋肉の解説と有効なトレーニング(種目id)
+const MUSCLE_INFO = {
+  chest:    { desc:'胸の前面を覆う扇形の大きな筋肉。腕を前に押し出す・内側に閉じる動作の主役。上部・中部・下部に分かれ、角度を変えたプレスで満遍なく刺激できます。', ex:['benchpress','inclinepress','dbfly','dips'] },
+  deltF:    { desc:'肩を丸く覆う筋肉の前・横部分。腕を前や真横に上げる動作を担当。横(中部)は肩幅を作る筋肉で、プレス系では前部に偏るためサイドレイズでの直接刺激が効きます。', ex:['ohp','sideraise','uprightrow','inclinepress'] },
+  deltR:    { desc:'肩の後ろ側。腕を後ろへ引く・外にひねる動作を担当。姿勢改善や肩の丸み(後ろから見た厚み)に重要で、プル系だけでは不足しがちな部位。', ex:['rearraise','facepull','bentrow'] },
+  biceps:   { desc:'上腕前面の「力こぶ」。肘を曲げる・手のひらを上に返す動作。逆手(手のひら手前)のプル種目で強く働きます。', ex:['chinup_rev','bbcurl','dbcurl','hammercurl'] },
+  triceps:  { desc:'上腕後面の筋肉で、実は上腕の約3分の2を占める。肘を伸ばす動作の主役で、腕を太くしたいならまずここ。プレス系でも協働します。', ex:['dips','skullcrusher','pressdown','benchpress'] },
+  forearm:  { desc:'前腕の筋肉群。握力と手首の動きを担当。プル系種目で自然に鍛えられるため、直接種目は握力がボトルネックのときに。', ex:['wristcurl','hammercurl','chinup'] },
+  abs:      { desc:'お腹の前面を縦に走る「シックスパック」の筋肉。体幹を丸める動作と、重い種目で体幹を固める役割。', ex:['crunch','legraise','abroller','plank'] },
+  oblique:  { desc:'脇腹を斜めに走る筋肉。体をひねる・横に倒す動作と、くびれ・体幹の安定に関与。', ex:['russiantwist','sidebend','plank'] },
+  traps:    { desc:'首の付け根から左右の肩、背中の中央まで広がる大きな凧形の筋肉。上部は肩をすくめる動作、中・下部は肩甲骨を寄せる・下げる動作を担当。首〜肩のラインを作ります。', ex:['shrug','facepull','bentrow','seatedrow'] },
+  lats:     { desc:'脇の下から腰へ広がる背中最大の筋肉で、「逆三角形」のシルエットを作る。腕を上から・前から体に引き寄せる動作の主役。', ex:['chinup','latpulldown','bentrow','dbrow'] },
+  lowback:  { desc:'背骨の両脇を縦に走る筋肉の柱。姿勢の維持と体幹を起こす動作を担当。あらゆる種目の土台ですが回復に時間がかかるため、直接種目のやり過ぎには注意。', ex:['deadlift','backext','rdl'] },
+  glutes:   { desc:'お尻の筋肉で、単体では全身最大級のパワーを持つ。股関節を伸ばす(体を起こす・押し出す)動作の主役。ヒップラインと下半身のパワーの要。', ex:['hipthrust','squat','bulgarian','rdl'] },
+  quads:    { desc:'太もも前面の4つの筋肉の総称。膝を伸ばす動作の主役で、体の中でも特に体積が大きい。スクワット系の深さで刺激が大きく変わります。', ex:['squat','legpress','lunge','legext'] },
+  adductor: { desc:'内ももの筋肉群。脚を閉じる動作と骨盤の安定を担当。ワイドスタンスのスクワットでもよく働きます。', ex:['adduction','squat','lunge'] },
+  hams:     { desc:'太もも裏の筋肉群。膝を曲げる・股関節を伸ばす2つの動作を担当。前ももとのバランスが崩れると膝のケガにつながりやすい、重要だが手薄になりがちな部位。', ex:['rdl','legcurl','bulgarian'] },
+  calves:   { desc:'ふくらはぎの筋肉。つま先立ち(かかとを上げる)動作を担当。高回数に反応しやすく、立位と座位で効く部位が少し変わります。', ex:['calfraise'] },
+};
+
 // 種目カテゴリ
 const CATS = ['胸','背中','肩','腕','脚','体幹'];
 
@@ -836,37 +859,60 @@ function suggestPrescription(ex) {
 }
 
 /* ================= 人体マップSVG ================= */
-// 右半身の形を定義し、mirror:true なら左右対称にコピーする
-const SIL_HALF = `M100,42 L109,42 C118,46 130,52 140,60
-  C148,66 152,70 152,76 C154,92 151,110 150,126 C152,144 155,160 156,176
-  C156,182 153,188 150,188 C146,188 144,184 144,180 C140,164 137,146 136,128
-  C135,116 133,104 131,96
-  C129,112 124,132 122,148 C126,164 132,176 132,190
-  C132,216 129,242 127,265 C126,290 127,300 126,305 C122,320 117,336 116,348
-  C116,354 119,356 119,360 L102,360 C102,356 103,352 103,348
-  C102,336 105,320 106,305 C106,300 104,290 104,265 C103,246 101,226 100,208 Z`;
+/* 右半身の形を定義し、mirror:true なら左右対称にコピーする。
+   日本人成人男性の平均体格を意識した約7頭身:
+   頭(y11-59)→首(y59-74)→なで肩(y74-100)→腕(手までy232)→
+   胴(ウエストy152)→骨盤(y190)→膝(y272)→足首(y349)→足(y362) */
+const SIL_HALF = `M100,11
+  C109,11 116,20 116,32
+  C116,44 112,54 106,59
+  C106,63 107,68 109,72
+  C114,78 125,82 135,86
+  C144,89 151,95 153,106
+  C158,124 163,146 166,168
+  C171,186 176,205 180,222
+  C184,229 187,236 188,242
+  C188,246 185,248 182,245
+  C178,240 174,234 172,228
+  C165,210 158,190 152,172
+  C144,150 135,128 128,108
+  C127,122 124,138 122,152
+  C125,168 129,178 132,190
+  C133,217 128,246 122,272
+  C119,290 120,305 118,321
+  C116,335 113,343 112,349
+  C112,355 114,359 114,362
+  L102,362
+  C102,356 103,349 104,345
+  C106,330 104,310 106,296
+  C107,283 106,275 106,269
+  C107,247 104,223 102,207
+  L100,204 Z`;
 
 const SHAPES = {
   front: [
-    { mid:'deltF',   mirror:true, d:'M130,63 C137,56 147,59 151,69 C154,77 153,86 149,91 C144,89 138,83 134,77 C131,72 129,67 130,63 Z' },
-    { mid:'chest',   mirror:true, d:'M100,66 C110,63 122,63 130,68 C134,73 135,81 133,89 C130,99 118,105 108,104 C102,103 100,100 100,94 Z' },
-    { mid:'biceps',  mirror:true, d:'M136,90 C141,86 148,88 150,94 C152,104 152,118 149,128 C146,132 140,132 138,128 C134,118 133,100 136,90 Z' },
-    { mid:'forearm', mirror:true, d:'M139,136 C143,132 148,133 150,138 C153,150 154,166 152,176 C150,180 145,180 143,176 C139,164 137,148 139,136 Z' },
-    { mid:'abs',     mirror:false, d:'M100,109 C106,109 111,111 112,114 C114,134 112,156 107,175 C102,179 98,179 93,175 C88,156 86,134 88,114 C89,111 94,109 100,109 Z' },
-    { mid:'oblique', mirror:true, d:'M115,113 C121,116 126,121 127,127 C125,143 123,157 119,168 C115,163 112,151 111,137 C111,128 112,119 115,113 Z' },
-    { mid:'quads',   mirror:true, d:'M105,196 C112,191 122,191 128,196 C132,214 131,240 126,262 C122,266 112,266 108,262 C103,240 102,216 105,196 Z' },
-    { mid:'adductor',mirror:true, d:'M101,206 C105,208 107,215 107,224 C106,236 104,245 102,251 C101,253 100,251 100,245 L100,208 Z' },
+    { mid:'deltF',   mirror:true, d:'M133,90 C140,83 149,86 152,96 C154,105 151,113 146,116 C140,113 135,106 133,99 C132,95 132,92 133,90 Z' },
+    { mid:'chest',   mirror:true, d:'M100,90 C110,88 122,89 129,94 C132,100 132,109 129,115 C124,123 112,127 104,125 C101,124 100,121 100,116 Z' },
+    { mid:'biceps',  mirror:true, d:'M141,118 C145,113 151,114 154,120 C160,132 163,146 162,157 C160,163 154,164 151,159 C145,148 140,132 141,118 Z' },
+    { mid:'forearm', mirror:true, d:'M160,178 C163,173 169,174 171,180 C175,192 177,206 176,216 C174,221 169,221 167,216 C162,204 159,190 160,178 Z' },
+    { mid:'abs',     mirror:false, d:'M100,130 C106,130 110,132 111,136 C112,155 110,177 106,193 C103,196 97,196 94,193 C90,177 88,155 89,136 C90,132 94,130 100,130 Z' },
+    { mid:'oblique', mirror:true, d:'M114,136 C119,140 123,147 124,153 C123,165 120,176 116,185 C113,179 111,167 111,155 C111,148 112,141 114,136 Z' },
+    { mid:'quads',   mirror:true, d:'M106,212 C113,206 124,207 128,213 C131,230 129,253 124,269 C119,273 110,273 107,269 C103,251 103,229 106,212 Z' },
+    { mid:'adductor',mirror:true, d:'M102,212 C105,214 106,221 106,229 C105,239 104,247 102,253 C101,255 100,252 100,246 L100,212 Z' },
   ],
   back: [
-    { mid:'traps',   mirror:true, d:'M100,44 C106,46 116,52 128,57 L140,62 C134,68 126,72 118,77 C110,83 104,93 102,102 C101,105 100,104 100,98 Z' },
-    { mid:'deltR',   mirror:true, d:'M130,63 C137,56 147,59 151,69 C154,77 153,86 149,91 C144,89 138,83 134,77 C131,72 129,67 130,63 Z' },
-    { mid:'triceps', mirror:true, d:'M136,90 C141,86 148,88 150,94 C152,104 152,118 149,128 C146,132 140,132 138,128 C134,118 133,100 136,90 Z' },
-    { mid:'forearm', mirror:true, d:'M139,136 C143,132 148,133 150,138 C153,150 154,166 152,176 C150,180 145,180 143,176 C139,164 137,148 139,136 Z' },
-    { mid:'lats',    mirror:true, d:'M103,98 C112,95 124,95 130,99 C129,110 126,122 120,134 C115,144 109,152 104,158 C102,152 101,140 101,126 C101,116 102,106 103,98 Z' },
-    { mid:'lowback', mirror:false, d:'M94,150 C98,148 102,148 106,150 C107,162 107,176 106,188 C102,192 98,192 94,188 C93,176 93,162 94,150 Z' },
-    { mid:'glutes',  mirror:true, d:'M101,192 C110,188 122,190 128,196 C131,204 130,216 126,224 C118,230 106,230 101,226 C99,216 99,202 101,192 Z' },
-    { mid:'hams',    mirror:true, d:'M104,234 C112,231 122,231 127,234 C130,252 128,272 123,288 C118,292 110,292 107,288 C103,270 102,252 104,234 Z' },
-    { mid:'calves',  mirror:true, d:'M108,300 C112,295 120,295 123,300 C126,312 125,330 121,340 C118,344 112,344 110,340 C106,330 105,312 108,300 Z' },
+    /* 僧帽筋: 首の付け根から左右の肩峰へ広がり、背中の中央まで伸びる凧形 */
+    { mid:'traps',   mirror:true, d:'M100,62 C107,64 119,70 132,79 C137,82 138,86 134,89 C124,95 114,103 109,115 C105,125 102,133 101,138 C100.5,140 100,138 100,130 Z' },
+    { mid:'deltR',   mirror:true, d:'M133,90 C140,83 149,86 152,96 C154,105 151,113 146,116 C140,113 135,106 133,99 C132,95 132,92 133,90 Z' },
+    { mid:'triceps', mirror:true, d:'M141,118 C145,113 151,114 154,120 C160,132 163,146 162,157 C160,163 154,164 151,159 C145,148 140,132 141,118 Z' },
+    { mid:'forearm', mirror:true, d:'M160,178 C163,173 169,174 171,180 C175,192 177,206 176,216 C174,221 169,221 167,216 C162,204 159,190 160,178 Z' },
+    /* 広背筋: 脇の下から腰へ収束する逆三角形 */
+    { mid:'lats',    mirror:true, d:'M102,128 C106,116 115,108 126,105 C130,104 131,108 130,113 C127,129 122,147 115,162 C110,172 106,180 104,185 C102,188 101,183 101,174 C101,157 101,142 102,128 Z' },
+    /* 脊柱起立筋: 背骨の両脇を縦に走る柱 */
+    { mid:'lowback', mirror:false, d:'M95,150 C98,148 102,148 105,150 C106,166 106,184 105,198 C102,201 98,201 95,198 C94,184 94,166 95,150 Z' },
+    { mid:'glutes',  mirror:true, d:'M101,198 C110,194 123,196 129,202 C132,212 131,224 127,232 C119,238 106,238 101,234 C99,222 99,208 101,198 Z' },
+    { mid:'hams',    mirror:true, d:'M105,242 C113,239 123,239 128,242 C131,260 129,280 124,293 C119,297 111,297 108,293 C104,276 103,258 105,242 Z' },
+    { mid:'calves',  mirror:true, d:'M108,303 C112,298 119,298 122,303 C125,315 124,331 120,341 C117,345 111,345 109,341 C105,331 105,315 108,303 Z' },
   ],
 };
 
@@ -876,7 +922,6 @@ function buildBodyMap(side) {
   // シルエット(左右)+ 頭
   inner += `<path class="silhouette" d="${SIL_HALF}"/>`;
   inner += `<path class="silhouette" d="${SIL_HALF}" transform="${MIRROR}"/>`;
-  inner += `<circle class="silhouette" cx="100" cy="25" r="15"/>`;
   for (const s of SHAPES[side]) {
     inner += `<path class="muscle" data-mid="${s.mid}" d="${s.d}" role="button" tabindex="0" aria-label="${MUSCLE_BY_ID[s.mid].name}"><title>${MUSCLE_BY_ID[s.mid].name}</title></path>`;
     if (s.mirror) inner += `<path class="muscle" data-mid="${s.mid}" d="${s.d}" transform="${MIRROR}"><title>${MUSCLE_BY_ID[s.mid].name}</title></path>`;
@@ -1397,11 +1442,11 @@ function renderRecord() {
           </div>`;
         }).join('')}
       </div></div>`;
-    } else if (state.routines.length && !recSearch && recCat === 'すべて') {
+    } else if (state.routines.length && recCat === 'すべて') {
       rtHTML = `<div class="sectionhead"><span>📋 ルーティン</span></div>
       <div class="chips">${state.routines.map(r=>`<button data-rt="${r.id}">${esc(r.name)}</button>`).join('')}</div>`;
     }
-    const recs = (!recSearch && recCat === 'すべて' && !activeRt) ? recommendExercises(3) : [];
+    const recs = (recCat === 'すべて' && !activeRt) ? recommendExercises(3) : [];
     const recHTML = recs.length ? `
       <div class="sectionhead"><span>💡 今週のおすすめ(マップの不足部位から)</span></div>
       <div class="card" style="padding:2px 14px;"><div class="exlist">
@@ -1432,7 +1477,7 @@ function renderRecord() {
 
   const cats = ['すべて', ...CATS];
   el.innerHTML = `
-    <div id="topWrap">${buildTopHTML()}</div>
+    <div id="topWrap" class="${recSearch ? 'collapsed' : ''}">${buildTopHTML()}</div>
     <div class="chips">${cats.map(c=>`<button data-cat="${c}" class="${c===recCat?'active':''}">${c}</button>`).join('')}</div>
     <div class="row" style="margin-bottom:10px;">
       <input type="search" id="exSearch" placeholder="種目を検索" value="${esc(recSearch)}" style="flex:1;min-width:0;">
@@ -1465,12 +1510,23 @@ function renderRecord() {
 
   $$('.chips button[data-cat]', el).forEach(b => b.addEventListener('click', () => { recCat = b.dataset.cat; renderRecord(); }));
   // 検索: 入力欄は作り直さず、下のリストだけを更新する(作り直すと日本語IMEの変換が確定できなくなるため)
+  // 「ルーティン/今週のおすすめ」は突然消さず、上へスライドして畳む
   const si = $('#exSearch', el);
   si.addEventListener('input', () => {
     recSearch = si.value;
-    $('#topWrap', el).innerHTML = buildTopHTML();
+    const tw = $('#topWrap', el);
+    const hide = !!recSearch;
+    if (hide && !tw.classList.contains('collapsed')) {
+      tw.style.maxHeight = tw.scrollHeight + 'px';        // 現在の高さを起点に
+      requestAnimationFrame(() => tw.classList.add('collapsed'));
+    } else if (!hide && tw.classList.contains('collapsed')) {
+      tw.innerHTML = buildTopHTML(); bindTop();           // 中身を作り直してから展開
+      tw.classList.remove('collapsed');
+      tw.style.maxHeight = tw.scrollHeight + 'px';
+      setTimeout(() => { tw.style.maxHeight = ''; }, 400);
+    }
     $('#listWrap', el).innerHTML = buildListHTML();
-    bindTop(); bindList();
+    bindList();
   });
   $('#sortSel', el).addEventListener('change', e => { state.settings.sortMode = e.target.value; saveState(); renderRecord(); });
 }
@@ -1856,7 +1912,22 @@ function openMuscleSheet(mid, stats) {
         </div>`;
       }).join('') : '<div class="empty">この週の記録はありません</div>'}
     </div>
-    ${contribs.length ? '<div class="muted" style="margin-top:8px;font-size:11px;">達成率は主働(×1.0)と協働(×0.5〜0.75)のワークセットのみでカウント。補助(×0.25)と、その日の最高重量の60%未満のウォームアップセットは含めていません。</div>' : ''}`;
+    ${contribs.length ? '<div class="muted" style="margin-top:8px;font-size:11px;">達成率は主働(×1.0)と協働(×0.5〜0.75)のワークセットのみでカウント。補助(×0.25)と、その日の最高重量の60%未満のウォームアップセットは含めていません。</div>' : ''}
+    ${MUSCLE_INFO[mid] ? `
+    <div style="margin-top:16px;border-top:1px solid var(--grid);padding-top:12px;">
+      <div style="font-weight:700;font-size:13.5px;">この筋肉について</div>
+      <div class="secondary" style="font-size:12.5px;margin-top:4px;line-height:1.65;">${MUSCLE_INFO[mid].desc}</div>
+      <div style="font-weight:700;font-size:13.5px;margin-top:12px;">有効なトレーニング</div>
+      <div class="row" style="flex-wrap:wrap;margin-top:8px;">
+        ${MUSCLE_INFO[mid].ex.map(id=>{ const e=exById(id); return e?`<button class="ghost" data-sheetex="${id}" style="font-size:12.5px;">${esc(e.name)} ›</button>`:''; }).join('')}
+      </div>
+    </div>` : ''}`;
+  // おすすめ種目 → シートを閉じて記録画面へ
+  $$('button[data-sheetex]', sheet).forEach(b => b.addEventListener('click', () => {
+    closeSheet();
+    pickDate = today();
+    startDraft(b.dataset.sheetex);
+  }));
   $('#sheetBackdrop').classList.add('open');
   sheet.classList.add('open');
   selectedMuscle = mid;
