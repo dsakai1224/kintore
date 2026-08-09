@@ -1160,9 +1160,21 @@ function exportText(dates) {
     const logs = byDate[d];
     const vol = logs.reduce((a,l)=>a+tonnageOf(l),0);
     const prs = prEv.filter(e=>e.date===d);
+    // トレーニング時間の自動推定(各種目の保存時刻の最初〜最後)
+    const tss = logs.map(l=>l.ts).filter(Boolean);
+    let timeLine = '';
+    if (tss.length) {
+      const st = new Date(Math.min(...tss)), en = new Date(Math.max(...tss));
+      const f = x => `${x.getHours()}:${String(x.getMinutes()).padStart(2,'0')}`;
+      const durMin = Math.round((en - st) / 60000);
+      timeLine = (tss.length >= 2 && durMin >= 5)
+        ? `\nトレーニング時間(推定): ${f(st)}〜${f(en)}(約${durMin}分+最終種目の実施分)`
+        : `\n記録時刻: ${f(en)}頃(所要時間の推定には種目2つ以上の記録が必要)`;
+    }
     return `【${d.replace(/-/g,'/')}(${'日月火水木金土'[parseDate(d).getDay()]})】\n` +
       logs.map(fmtLogText).join('\n') +
       `\n日合計: ${logs.length}種目 / ${logs.reduce((a,l)=>a+l.sets.length,0)}セット / 総重量 ${Math.round(vol).toLocaleString()}kg` +
+      timeLine +
       (prs.length ? `\n🏆 自己ベスト更新: ${prs.map(e=>{const ex=exById(e.exId);return `${ex?ex.name:e.exId} ${PR_KINDS[e.kind]} ${prValueFmt(e.kind,e.value)}`;}).join('、')}` : '');
   });
   const p = state.settings.profile || {};
@@ -1175,7 +1187,7 @@ function exportText(dates) {
   ].filter(Boolean).join('・');
   return `以下は筋トレ記録アプリからエクスポートしたトレーニングデータです(${ds.length}日分)。\n` +
     (prof ? `プロフィール: ${prof}\n` : '') +
-    `\n${parts.join('\n\n')}\n\n※「自重」= 加重なしの自体重種目。推定1RMはEpley式による換算値。`;
+    `\n${parts.join('\n\n')}\n\n※「自重」= 加重なしの自体重種目。推定1RMはEpley式による換算値。トレーニング時間は各種目を保存した時刻からの自動推定(最初の種目の記録〜最後の種目の記録)で、追加の質問は不要です。`;
 }
 async function shareDates(dates, label) {
   const text = exportText(dates);
@@ -1895,7 +1907,10 @@ function renderSetEditor(el) {
       toast('修正しました');
     } else {
       savedId = 'l'+Math.random().toString(36).slice(2,9)+Date.now().toString(36);
-      state.logs.push({ id: savedId, date: draft.date, exId: draft.exId, sets });
+      const log = { id: savedId, date: draft.date, exId: draft.exId, sets };
+      // 当日の記録なら保存時刻も持つ(トレーニング時間の自動推定に使用。過去日の後付け入力には付けない)
+      if (draft.date === today()) log.ts = Date.now();
+      state.logs.push(log);
       toast('記録しました 💪');
     }
     saveState();
