@@ -276,6 +276,10 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 .confetti { position:fixed; top:-28px; font-size:20px; animation:confFall linear forwards; z-index:201; pointer-events:none; }
 @keyframes confFall { to { transform:translateY(112vh) rotate(720deg); opacity:.9; } }
 
+/* 汎用モーダル(トレーニング開始確認など) */
+.modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; z-index:200; }
+.modal-card { background:var(--surface-1); border-radius:20px; padding:24px 20px; text-align:center; width:min(320px,86vw); animation:prPop .35s cubic-bezier(.2,1.4,.4,1); }
+
 /* summary strip */
 .sumstrip { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-bottom:12px; }
 .sumstrip .tile { background: var(--surface-1); border:1px solid var(--border); border-radius:12px; padding: 10px 8px; text-align:center; }
@@ -680,6 +684,7 @@ if (state.logs) state.logs = state.logs.filter(l => l.exId !== 'spinbike44');
 state.favorites = state.favorites.filter(id => id !== 'spinbike44');
 if (!state.settings.muscleTargets) state.settings.muscleTargets = {};
 if (!state.routines) state.routines = [];
+if (!state.sessions) state.sessions = {}; // 'YYYY-MM-DD' -> セッション開始時刻(その日最初に「トレーニングを追加」を押した時刻)
 
 function allExercises() { return EXERCISES.concat(state.customExercises); }
 function exById(id) { return allExercises().find(e => e.id === id); }
@@ -1160,16 +1165,22 @@ function exportText(dates) {
     const logs = byDate[d];
     const vol = logs.reduce((a,l)=>a+tonnageOf(l),0);
     const prs = prEv.filter(e=>e.date===d);
-    // トレーニング時間の自動推定(各種目の保存時刻の最初〜最後)
+    // トレーニング時間の自動推定
+    // 開始 = その日最初に「本日のトレーニングを追加」を押した時刻(なければ最初の種目の保存時刻で代用)
+    // 終了 = 最後の種目の保存時刻
     const tss = logs.map(l=>l.ts).filter(Boolean);
+    const sess = state.sessions ? state.sessions[d] : null;
     let timeLine = '';
-    if (tss.length) {
-      const st = new Date(Math.min(...tss)), en = new Date(Math.max(...tss));
-      const f = x => `${x.getHours()}:${String(x.getMinutes()).padStart(2,'0')}`;
-      const durMin = Math.round((en - st) / 60000);
-      timeLine = (tss.length >= 2 && durMin >= 5)
-        ? `\nトレーニング時間(推定): ${f(st)}〜${f(en)}(約${durMin}分+最終種目の実施分)`
-        : `\n記録時刻: ${f(en)}頃(所要時間の推定には種目2つ以上の記録が必要)`;
+    if (sess || tss.length) {
+      const stMs = sess || (tss.length ? Math.min(...tss) : null);
+      const enMs = tss.length ? Math.max(...tss) : null;
+      const f = ms => { const x = new Date(ms); return `${x.getHours()}:${String(x.getMinutes()).padStart(2,'0')}`; };
+      if (stMs && enMs && enMs - stMs >= 5 * 60000) {
+        const durMin = Math.round((enMs - stMs) / 60000);
+        timeLine = `\nトレーニング時間(推定): ${f(stMs)}〜${f(enMs)}(約${durMin}分)${sess ? '' : ' ※開始は最初の種目の記録時刻で代用した概算'}`;
+      } else if (enMs) {
+        timeLine = `\n記録時刻: ${f(enMs)}頃`;
+      }
     }
     return `【${d.replace(/-/g,'/')}(${'日月火水木金土'[parseDate(d).getDay()]})】\n` +
       logs.map(fmtLogText).join('\n') +
@@ -1187,7 +1198,7 @@ function exportText(dates) {
   ].filter(Boolean).join('・');
   return `以下は筋トレ記録アプリからエクスポートしたトレーニングデータです(${ds.length}日分)。\n` +
     (prof ? `プロフィール: ${prof}\n` : '') +
-    `\n${parts.join('\n\n')}\n\n※「自重」= 加重なしの自体重種目。推定1RMはEpley式による換算値。トレーニング時間は各種目を保存した時刻からの自動推定(最初の種目の記録〜最後の種目の記録)で、追加の質問は不要です。`;
+    `\n${parts.join('\n\n')}\n\n※「自重」= 加重なしの自体重種目。推定1RMはEpley式による換算値。トレーニング時間は「トレーニング開始ボタンを押した時刻〜最後の種目を記録した時刻」からアプリが自動推定した値です。追加の質問は不要です。`;
 }
 async function shareDates(dates, label) {
   const text = exportText(dates);
@@ -1301,7 +1312,7 @@ function renderHome() {
       </div>
     </div>
     <div class="homebtns">
-      <button class="primary" id="addToday">＋ 本日のトレーニングを追加</button>
+      <button class="primary" id="addToday">${state.sessions[t] ? '＋ 本日のトレーニングを追加' : '▶ 本日のトレーニングを開始'}</button>
       <button class="outline" id="rmCalc">🏋 RM 計算機</button>
     </div>
     ${streakLine}
@@ -1331,7 +1342,12 @@ function renderHome() {
   $('#calPrev').addEventListener('click', ()=>{ const d=parseDate(homeFirst); d.setMonth(d.getMonth()-1); homeFirst=fmtDate(d); renderHome(); });
   $('#calNext').addEventListener('click', ()=>{ const d=parseDate(homeFirst); d.setMonth(d.getMonth()+1); homeFirst=fmtDate(d); renderHome(); });
   $$('.cal button[data-day]', el).forEach(b => b.addEventListener('click', ()=> openDay(b.dataset.day, 'home')));
-  $('#addToday').addEventListener('click', ()=>{ pickDate = today(); draft = null; switchView('record'); });
+  $('#addToday').addEventListener('click', ()=>{
+    const t0 = today();
+    // その日最初に押した時刻をセッション開始として記録(2回目以降は上書きしない)
+    if (!state.sessions[t0]) { state.sessions[t0] = Date.now(); saveState(); toast('トレーニング開始! 🔥'); }
+    pickDate = t0; draft = null; switchView('record');
+  });
   $('#rmCalc').addEventListener('click', openRMCalc);
   // 今週のマップ(タップでマップタブの該当部位へ)
   const wkStats = weekStats(mondayOf(t));
@@ -1473,7 +1489,10 @@ function renderDay() {
     const log = state.logs.find(l=>l.id===b.dataset.editlog);
     if (log) startDraft(log.exId, log);
   }));
-  $('#dayAdd').addEventListener('click', ()=>{ pickDate = dayDate; draft = null; switchView('record'); });
+  $('#dayAdd').addEventListener('click', ()=>{
+    if (dayDate === today() && !state.sessions[dayDate]) { state.sessions[dayDate] = Date.now(); saveState(); }
+    pickDate = dayDate; draft = null; switchView('record');
+  });
   const srBtn = $('#saveRoutine', el);
   if (srBtn) srBtn.addEventListener('click', () => {
     const exIds = [...new Set(logs.map(l=>l.exId))].filter(id=>exById(id));
@@ -1667,7 +1686,34 @@ function enableDragSort(listEl) {
   listEl.addEventListener('pointercancel', end);
 }
 
+// 「今日はまだ開始していない」状態で記録タブから種目を選んだときの確認
+let sessionDeclinedFor = null; // 「今はしない」を選んだ日(この起動中は再度聞かない)
+function askSessionStart(then) {
+  const now = new Date();
+  const div = document.createElement('div');
+  div.className = 'modal-backdrop';
+  div.innerHTML = `<div class="modal-card">
+    <div style="font-size:17px;font-weight:800;">本日のトレーニングを開始しますか?</div>
+    <div class="muted" style="margin-top:8px;line-height:1.6;">「開始する」を押すと現在時刻(${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')})を開始として記録し、Gemini共有のトレーニング時間の推定に使います。</div>
+    <button class="primary" id="ssYes" style="margin-top:14px;">▶ 開始する</button>
+    <button class="ghost" id="ssNo" style="width:100%;margin-top:8px;">今はしない(記録だけする)</button>
+  </div>`;
+  document.body.appendChild(div);
+  $('#ssYes', div).addEventListener('click', () => { div.remove(); then(true); });
+  $('#ssNo', div).addEventListener('click', () => { div.remove(); then(false); });
+}
 function startDraft(exId, log=null) {
+  if (!log && pickDate === today() && !state.sessions[pickDate] && sessionDeclinedFor !== pickDate) {
+    askSessionStart(started => {
+      if (started) { state.sessions[pickDate] = Date.now(); saveState(); toast('トレーニング開始! 🔥'); }
+      else sessionDeclinedFor = pickDate;
+      startDraftNow(exId, log);
+    });
+    return;
+  }
+  startDraftNow(exId, log);
+}
+function startDraftNow(exId, log=null) {
   const last = lastLogOf(exId, today());
   let sets, sug = null;
   if (log) sets = log.sets.map(s=>({...s}));
