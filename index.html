@@ -1126,6 +1126,90 @@ function progressChartsHTML(exId) {
   </div>`;
 }
 
+/* ---------- Gemini共有(記録のテキスト化+クリップボードコピー) ---------- */
+async function copyToClipboard(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch(e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch(_) {}
+    ta.remove(); return ok;
+  }
+}
+function fmtLogText(l) {
+  const ex = exById(l.exId);
+  const name = ex ? ex.name : l.exId;
+  const lines = l.sets.map((s,i)=>`  ${i+1}セット目: ${s.w>0 ? s.w+'kg' : '自重'} × ${s.r}回${s.m ? ' メモ:'+s.m : ''}`);
+  const ton = tonnageOf(l);
+  const best = Math.max(...l.sets.map(s=>rm1(+s.w,+s.r)||0));
+  const extra = [];
+  if (ton > 0) extra.push(`種目内総重量 ${Math.round(ton).toLocaleString()}kg`);
+  if (best > 0) extra.push(`推定1RM ${fmtRM(best)}kg`);
+  return `■ ${name}${ex?`(${ex.cat})`:''}\n${lines.join('\n')}${extra.length?`\n  ${extra.join(' / ')}`:''}`;
+}
+// dates(YYYY-MM-DD配列)の記録をGemini等に貼り付けやすいテキストにする
+function exportText(dates) {
+  const dset = new Set(dates);
+  const byDate = {};
+  for (const l of state.logs) if (dset.has(l.date)) (byDate[l.date] = byDate[l.date] || []).push(l);
+  const ds = Object.keys(byDate).sort();
+  if (!ds.length) return null;
+  const prEv = prTimeline().events;
+  const parts = ds.map(d => {
+    const logs = byDate[d];
+    const vol = logs.reduce((a,l)=>a+tonnageOf(l),0);
+    const prs = prEv.filter(e=>e.date===d);
+    return `【${d.replace(/-/g,'/')}(${'日月火水木金土'[parseDate(d).getDay()]})】\n` +
+      logs.map(fmtLogText).join('\n') +
+      `\n日合計: ${logs.length}種目 / ${logs.reduce((a,l)=>a+l.sets.length,0)}セット / 総重量 ${Math.round(vol).toLocaleString()}kg` +
+      (prs.length ? `\n🏆 自己ベスト更新: ${prs.map(e=>{const ex=exById(e.exId);return `${ex?ex.name:e.exId} ${PR_KINDS[e.kind]} ${prValueFmt(e.kind,e.value)}`;}).join('、')}` : '');
+  });
+  const p = state.settings.profile || {};
+  const prof = [
+    p.age ? `${p.age}歳` : null,
+    p.bw ? `体重${p.bw}kg` : null,
+    p.exp ? ({b:'トレ歴1年未満',i:'トレ歴1〜3年',a:'トレ歴3年以上'})[p.exp] : null,
+    p.goal ? ({maintain:'目的:維持',hyper:'目的:筋肥大',bulk:'目的:増量'})[p.goal] : null,
+    p.days ? `週${p.days}日目標` : null,
+  ].filter(Boolean).join('・');
+  return `以下は筋トレ記録アプリからエクスポートしたトレーニングデータです(${ds.length}日分)。\n` +
+    (prof ? `プロフィール: ${prof}\n` : '') +
+    `\n${parts.join('\n\n')}\n\n※「自重」= 加重なしの自体重種目。推定1RMはEpley式による換算値。`;
+}
+async function shareDates(dates, label) {
+  const text = exportText(dates);
+  if (!text) { toast(label + 'の記録がありません'); return; }
+  const ok = await copyToClipboard(text);
+  toast(ok ? `${label}の記録をコピーしました。Geminiに貼り付けてください ✨` : 'コピーに失敗しました');
+}
+function openShareSheet() {
+  const sheet = $('#sheet');
+  const allDates = [...new Set(state.logs.map(l=>l.date))].sort();
+  const minD = allDates[0] || today(), maxD = allDates[allDates.length-1] || today();
+  sheet.innerHTML = `
+    <div class="grip"></div>
+    <h3>今までのトレーニングを共有</h3>
+    <div class="muted" style="margin-top:4px;">記録の詳細をテキスト化してコピーします。Geminiなどに貼り付けると、分析やメニューの相談に使えます。</div>
+    <button class="primary" id="shAll" style="margin-top:14px;">全期間をコピー(${allDates.length}日分)</button>
+    <div class="muted" style="margin:16px 0 6px;">または期間を指定してコピー:</div>
+    <div class="row">
+      <input type="date" id="shFrom" value="${minD}" style="flex:1;min-width:0;">
+      <span style="flex:0 0 auto;">〜</span>
+      <input type="date" id="shTo" value="${maxD}" style="flex:1;min-width:0;">
+    </div>
+    <button class="ghost" id="shRange" style="width:100%;margin-top:10px;">この期間をコピー</button>`;
+  $('#shAll').addEventListener('click', async () => { await shareDates(allDates, '全期間'); closeSheet(); });
+  $('#shRange').addEventListener('click', async () => {
+    const f = $('#shFrom').value, t = $('#shTo').value;
+    if (!f || !t || f > t) { toast('期間の指定を確認してください'); return; }
+    await shareDates(allDates.filter(d => d >= f && d <= t), '指定期間');
+    closeSheet();
+  });
+  $('#sheetBackdrop').classList.add('open');
+  sheet.classList.add('open');
+}
+
 /* ---------- ホーム ---------- */
 const MONTH_EN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 function daysInWeek(monday) {
@@ -1148,8 +1232,8 @@ function renderHome() {
   const y = first.getFullYear(), mo = first.getMonth();
   const trainedDates = new Set(state.logs.map(l=>l.date));
 
-  // カレンダー(日曜始まり・6週)
-  const start = new Date(y, mo, 1 - new Date(y, mo, 1).getDay());
+  // カレンダー(月曜始まり・6週)
+  const start = new Date(y, mo, 1 - ((new Date(y, mo, 1).getDay() + 6) % 7));
   let cells = '';
   for (let i = 0; i < 42; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i);
@@ -1200,7 +1284,7 @@ function renderHome() {
         <button id="calNext" aria-label="次の月">›</button>
       </div>
       <div class="cal">
-        ${['SUN','MON','TUE','WED','THU','FRI','SAT'].map(d=>`<span class="dow">${d}</span>`).join('')}
+        ${['MON','TUE','WED','THU','FRI','SAT','SUN'].map(d=>`<span class="dow">${d}</span>`).join('')}
         ${cells}
       </div>
     </div>
@@ -1226,7 +1310,11 @@ function renderHome() {
         <div class="hd"><span>${esc(ex?ex.name:l.exId)}</span><span class="rm">${tm ? '🫀 '+l.sets.reduce((a,s)=>a+(s.r||0),0)+'分' : 'RM : '+(best>0?fmtRM(best)+'kg':'-')}</span></div>
         ${l.sets.map((s,i)=>`<div class="ln">${i+1}　${tm ? s.r+' 分' : (s.w>0?s.w+' kg':'自重')+' × '+s.r+' reps'}</div>`).join('')}
       </div>`;
-    }).join('')}`;
+    }).join('')}
+    <div class="sectionhead" style="margin-top:14px;"><span>✨ Geminiに共有</span></div>
+    <button class="ghost" id="shareToday" style="width:100%;">本日のトレーニングをGeminiに共有(コピー)</button>
+    <button class="ghost" id="shareHistory" style="width:100%;margin-top:8px;">今までのトレーニングをGeminiに共有(全期間/期間指定)</button>
+    <div class="muted" style="margin-top:6px;font-size:11px;">記録の詳細をテキストとしてコピーします。Geminiアプリに貼り付ければ、フォームやメニューの相談・分析にそのまま使えます。</div>`;
 
   $('#calPrev').addEventListener('click', ()=>{ const d=parseDate(homeFirst); d.setMonth(d.getMonth()-1); homeFirst=fmtDate(d); renderHome(); });
   $('#calNext').addEventListener('click', ()=>{ const d=parseDate(homeFirst); d.setMonth(d.getMonth()+1); homeFirst=fmtDate(d); renderHome(); });
@@ -1246,6 +1334,8 @@ function renderHome() {
     p.addEventListener('keydown', e => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); p.click(); } });
   });
   $('#goMap').addEventListener('click', ()=>{ mapMonday = mondayOf(today()); switchView('map'); });
+  $('#shareToday').addEventListener('click', () => shareDates([t], '本日'));
+  $('#shareHistory').addEventListener('click', openShareSheet);
   const gt = $('#goToday'); if (gt) gt.addEventListener('click', ()=>openDay(t,'home'));
   $$('.todaycard', el).forEach(c => c.addEventListener('click', ()=>{
     const log = state.logs.find(l=>l.id===c.dataset.log);
