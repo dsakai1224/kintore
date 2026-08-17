@@ -711,8 +711,13 @@ function jpDate(s) { const d=parseDate(s); return `${d.getMonth()+1}/${d.getDate
    自重種目(全セットw=0)は判定できないため全セットをカウント。 */
 function workSetCount(log) {
   const topW = log.sets.reduce((a,s)=>Math.max(a, +s.w||0), 0);
-  if (topW <= 0) return log.sets.length;
-  return log.sets.filter(s => (+s.w||0) >= topW * 0.6).length;
+  return log.sets.filter(s => {
+    // 余力5回以上(RPE5以下)と自己申告したセットは、筋肥大刺激として弱いため達成率に数えない
+    if (s.rir != null && +s.rir >= 5) return false;
+    // ウォームアップ判定(自重種目は対象外)
+    if (topW > 0 && (+s.w||0) < topW * 0.6) return false;
+    return true;
+  }).length;
 }
 
 /* 週間の筋肉別スコア: { muscleId: { sets, vol, contribs: [{exId, sets, ref, vol, coef}] } }
@@ -1173,6 +1178,43 @@ function miniChart(title, pts, unit) {
     </svg>
   </div>`;
 }
+/* ---------- 停滞検知 ----------
+   直近4セッションで、それ以前のベスト推定1RM(自重種目は最多レップ)を一度も更新していなければ停滞気味。
+   6セッション未満の種目には表示しない。対処の優先順位はミニマル筋肥大プログラムに準拠:
+   ①フォーム・睡眠・栄養の確認 → ②デロード → ③同じ筋肉を狙う別種目へ変更 */
+function stagnationInfo(exId) {
+  const ss = sessionSeries(exId);
+  if (ss.length < 6) return null;
+  const metric = p => p.rm != null ? p.rm : (p.reps != null ? p.reps : 0);
+  const recent = ss.slice(-4);
+  const before = ss.slice(0, -4);
+  const beforeBest = Math.max(...before.map(metric));
+  const recentBest = Math.max(...recent.map(metric));
+  if (beforeBest > 0 && recentBest <= beforeBest) {
+    return { beforeBest, recentBest, isBW: recent[recent.length-1].rm == null };
+  }
+  return null;
+}
+function stagnationHTML(ex) {
+  const st = stagnationInfo(ex.id);
+  if (!st) return '';
+  const bestStr = st.isBW ? `${st.beforeBest}回` : `${fmtRM(st.beforeBest)}kg`;
+  const primEntry = Object.entries(ex.m || {}).find(([,c]) => c === 1);
+  const alts = primEntry
+    ? allExercises().filter(e => e.id !== ex.id && !e.time && e.m[primEntry[0]] === 1).slice(0,3).map(e=>e.name).join('・')
+    : '';
+  return `<div class="card" style="margin-top:12px;border:1.5px solid var(--star);">
+    <div style="font-weight:800;font-size:14px;">⚠️ 停滞気味かも</div>
+    <div class="secondary" style="font-size:12.5px;margin-top:6px;line-height:1.75;">
+      直近4セッション、この種目の${st.isBW ? '最多レップ' : '推定1RM'}のベスト(${bestStr})を更新できていません。<br>
+      <b>チェック順:</b><br>
+      ① 睡眠・栄養(タンパク質)・フォームや可動域が崩れていないか確認<br>
+      ② 疲労が溜まっていそうなら今日は「🌙 控えめ」でデロード(疲労を抜くと再び伸びることが多い)<br>
+      ③ それでも数週間停滞するなら、同じ筋肉を狙う別種目への変更を検討${alts ? `(候補: ${alts})` : ''}
+    </div>
+  </div>`;
+}
+
 function progressChartsHTML(exId) {
   const ss = sessionSeries(exId);
   if (ss.length < 2) return '';
@@ -1263,7 +1305,7 @@ function exportText(dates) {
   return `以下は筋トレ記録アプリからエクスポートしたトレーニングデータです(${ds.length}日分)。\n` +
     `「余力n回」= そのセット終了時にあと何回挙げられたかの自己申告(RIR)。\n` +
     (prof ? `プロフィール: ${prof}\n` : '') +
-    `\n${parts.join('\n\n')}\n\n※「自重」= 加重なしの自体重種目。推定1RMはEpley式による換算値。トレーニング時間は「トレーニング開始ボタンを押した時刻〜最後の種目を記録した時刻」からアプリが自動推定した値です。追加の質問は不要です。`;
+    `\n${parts.join('\n\n')}\n\n※「自重」= 加重なしの自体重種目。推定1RMはEpley式による換算値。トレーニング時間は「トレーニング開始ボタンを押した時刻〜最後の種目を記録した時刻」からアプリが自動推定した値です。追加の質問は不要です。\n体重・筋肉量・体脂肪率の推移はInBodyアプリで別途管理しています。体組成を踏まえた分析が必要な場合は、質問する代わりに「InBodyの推移データ(スクリーンショット等)を貼ってください」と依頼してください。`;
 }
 async function shareDates(dates, label) {
   const text = exportText(dates);
@@ -2004,6 +2046,7 @@ function renderSetEditor(el) {
     </div>
     <button class="primary" id="saveLog">${draft.logId ? '修正を保存' : '記録する'}</button>
     ${draft.logId ? '<button class="ghost danger" id="cancelEdit" style="width:100%;margin-top:8px;">編集をやめる</button>' : ''}
+    ${stagnationHTML(ex)}
     ${progressChartsHTML(draft.exId)}
     ${Object.keys(ex.m).length ? `<div class="card" style="margin-top:12px;">
       <h2 style="font-size:15px;margin-top:0;">この種目が効く部位</h2>
@@ -2218,7 +2261,7 @@ function openMuscleSheet(mid, stats) {
         </div>`;
       }).join('') : '<div class="empty">この週の記録はありません</div>'}
     </div>
-    ${contribs.length ? '<div class="muted" style="margin-top:8px;font-size:11px;">達成率は主働(×1.0)と協働(×0.5〜0.75)のワークセットのみでカウント。補助(×0.25)と、その日の最高重量の60%未満のウォームアップセットは含めていません。</div>' : ''}
+    ${contribs.length ? '<div class="muted" style="margin-top:8px;font-size:11px;">達成率は主働(×1.0)と協働(×0.5〜0.75)のワークセットのみでカウント。補助(×0.25)、その日の最高重量の60%未満のウォームアップセット、余力5回以上と記録した楽なセットは含めていません。</div>' : ''}
     ${MUSCLE_INFO[mid] ? `
     <div style="margin-top:16px;border-top:1px solid var(--grid);padding-top:12px;">
       <div style="font-weight:700;font-size:13.5px;">この筋肉について</div>
