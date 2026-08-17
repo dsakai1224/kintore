@@ -842,6 +842,70 @@ function recommendExercises(n = 3) {
   return out;
 }
 
+/* ---------- 種目の分類(追い込み区分・レップレンジ・推奨インターバル) ----------
+   ミニマル筋肥大プログラムの知見:
+   ・高疲労コンパウンド(スクワット/デッド/RDL/レッグプレス等)は余力1〜2回(RPE8〜9)で止める
+   ・安全なマシン/ケーブル/アイソレーションは最終セット余力0(RPE10)までOK
+   ・インターバル: 下半身高重量2〜5分 / 上半身メイン2〜3分 / マシン1.5〜3分 / アイソ1〜2分 */
+const EX_CLASS = {
+  high: ['squat','frontsquat','deadlift','rdl','legpress','bentrow','thruster','bulgarian','lunge'],
+  safe: ['sideraise','frontraise','rearraise','facepull','shrug','bbcurl','dbcurl','hammercurl',
+         'pressdown','skullcrusher','kickback','wristcurl','legext','legcurl','calfraise','adduction',
+         'cablecross','dbfly','chestpress','latpulldown','seatedrow','backext','crunch','legraise',
+         'plank','russiantwist','sidebend','abroller'],
+};
+function exClass(ex) {
+  if (!ex) return 'mid';
+  if (EX_CLASS.high.includes(ex.id)) return 'high';
+  if (EX_CLASS.safe.includes(ex.id)) return 'safe';
+  return 'mid';
+}
+// 種目ごとの目標レップレンジ(ダブルプログレッション用)
+function repRange(ex) {
+  if (['calfraise','crunch','legraise','russiantwist','sidebend','abroller','plank'].includes(ex.id)) return [12,20];
+  const c = exClass(ex);
+  if (c === 'high') return [6,10];
+  if (c === 'safe') return [10,15];
+  return [8,12];
+}
+// 種目ごとの推奨インターバル(秒)
+function exRest(ex) {
+  const c = exClass(ex);
+  if (c === 'high') return 180;
+  if (c === 'safe') {
+    const mainMuscles = Object.values(ex.m || {}).filter(v => v >= 0.5).length;
+    return mainMuscles <= 1 ? 60 : 90; // アイソレーション1分 / マシンコンパウンド1.5分
+  }
+  return 120; // 上半身メイン種目など
+}
+// メイン重量からウォームアップの段階重量を計算
+function warmupHTML(ex, sets) {
+  if (!ex || ex.time) return '';
+  const main = Math.max(0, ...sets.map(s => +s.w || 0));
+  if (main < 20) return '';
+  const r = w => Math.max(2.5, Math.round(w / 2.5) * 2.5);
+  const cls = exClass(ex);
+  let body;
+  if (cls === 'safe') {
+    body = `<div class="lr-sets">${r(main*0.5)}kg × 8回 (1〜2セット)</div>
+      <div class="muted" style="margin-top:4px;font-size:11px;">マシン・アイソレーション系は軽い準備1〜2セットで十分。疲れるまでやらないこと。</div>`;
+  } else {
+    const steps = [
+      'バーまたは超軽量 × 8〜10回',
+      `${r(main*0.45)}kg × 5〜8回`,
+      `${r(main*0.65)}kg × 3〜5回`,
+      `${r(main*0.8)}kg × 1〜3回`,
+    ];
+    if (main >= 80) steps.push(`${r(main*0.9)}kg × 1回`);
+    body = steps.map(s=>`<div class="lr-sets">${s}</div>`).join('') +
+      `<div class="muted" style="margin-top:4px;font-size:11px;">段階的に温めて、疲れる前にメインセットへ。ウォームアップは記録不要です(達成率にも数えません)。</div>`;
+  }
+  return `<details class="lastrec" style="margin-top:8px;">
+    <summary style="cursor:pointer;font-weight:700;font-size:13px;">🔥 ウォームアップ目安(メイン ${main}kg 想定)</summary>
+    <div style="margin-top:6px;">${body}</div>
+  </details>`;
+}
+
 /* ---------- 標準的な実施重量・回数の提案 ----------
    優先順: ①その種目の履歴があれば推定1RMの80%(=10RM相当) ②自重種目はトレ歴別の標準回数
    ③体重×トレ歴の標準比(STD_RX) ④どれも無ければ一般則のみ。回数は筋肥大の基本レンジから10回。 */
@@ -1145,7 +1209,7 @@ async function copyToClipboard(text) {
 function fmtLogText(l) {
   const ex = exById(l.exId);
   const name = ex ? ex.name : l.exId;
-  const lines = l.sets.map((s,i)=>`  ${i+1}セット目: ${s.w>0 ? s.w+'kg' : '自重'} × ${s.r}回${s.m ? ' メモ:'+s.m : ''}`);
+  const lines = l.sets.map((s,i)=>`  ${i+1}セット目: ${s.w>0 ? s.w+'kg' : '自重'} × ${s.r}回${s.rir != null ? ` (余力${s.rir}回)` : ''}${s.m ? ' メモ:'+s.m : ''}`);
   const ton = tonnageOf(l);
   const best = Math.max(...l.sets.map(s=>rm1(+s.w,+s.r)||0));
   const extra = [];
@@ -1197,6 +1261,7 @@ function exportText(dates) {
     p.days ? `週${p.days}日目標` : null,
   ].filter(Boolean).join('・');
   return `以下は筋トレ記録アプリからエクスポートしたトレーニングデータです(${ds.length}日分)。\n` +
+    `「余力n回」= そのセット終了時にあと何回挙げられたかの自己申告(RIR)。\n` +
     (prof ? `プロフィール: ${prof}\n` : '') +
     `\n${parts.join('\n\n')}\n\n※「自重」= 加重なしの自体重種目。推定1RMはEpley式による換算値。トレーニング時間は「トレーニング開始ボタンを押した時刻〜最後の種目を記録した時刻」からアプリが自動推定した値です。追加の質問は不要です。`;
 }
@@ -1446,7 +1511,7 @@ function renderDay() {
           <tbody>${l.sets.map((s,i)=>`
             <tr><td>${i+1}</td>
             <td class="wt">${tm ? (s.w>0?s.w:'—') : (s.w>0 ? s.w+' <span style="font-weight:400;font-size:11px;">Kg</span>' : '自重')}</td>
-            <td>${s.r} <span style="font-size:11px;color:var(--text-muted);">${tm?'分':'回'}</span></td>
+            <td>${s.r} <span style="font-size:11px;color:var(--text-muted);">${tm?'分':'回'}</span>${!tm&&s.rir!=null?`<span style="font-size:10px;color:var(--text-muted);"> 余力${s.rir}</span>`:''}</td>
             <td class="rmv">${!tm&&s.w>0?fmtRM(rm1(s.w,s.r))+'Kg':'-'}</td>
             <td><button class="trash" data-dellog="${l.id}" data-delset="${i}" aria-label="セット削除">🗑</button></td></tr>
             ${s.m?`<tr><td></td><td colspan="4" class="memoline">📝 ${esc(s.m)}</td></tr>`:''}`).join('')}
@@ -1686,6 +1751,30 @@ function enableDragSort(listEl) {
   listEl.addEventListener('pointercancel', end);
 }
 
+// 汎用の確認モーダル
+function confirmModal(title, desc, yesLabel, then) {
+  const div = document.createElement('div');
+  div.className = 'modal-backdrop';
+  div.innerHTML = `<div class="modal-card">
+    <div style="font-size:16px;font-weight:800;">${title}</div>
+    ${desc ? `<div class="muted" style="margin-top:8px;line-height:1.6;">${desc}</div>` : ''}
+    <button class="primary" id="cmYes" style="margin-top:14px;">${yesLabel}</button>
+    <button class="ghost" id="cmNo" style="width:100%;margin-top:8px;">キャンセル</button>
+  </div>`;
+  document.body.appendChild(div);
+  $('#cmYes', div).addEventListener('click', () => { div.remove(); then(true); });
+  $('#cmNo', div).addEventListener('click', () => { div.remove(); then(false); });
+}
+
+// 回数プルダウンの選択肢: 1〜20回 + 高回数種目(カーフ・腹筋・プランク秒数など)用の粗い刻み
+const REP_CHOICES = [...Array.from({length:20},(_,i)=>i+1), 25,30,35,40,45,50,60,70,80,90,100,120,150,180];
+function repOptionsHTML(cur) {
+  const opts = REP_CHOICES.slice();
+  const c = (cur === '' || cur == null) ? null : +cur;
+  if (c != null && !opts.includes(c)) { opts.push(c); opts.sort((a,b)=>a-b); }
+  return `<option value="">−</option>` + opts.map(n=>`<option value="${n}" ${c===n?'selected':''}>${n}</option>`).join('');
+}
+
 // 「今日はまだ開始していない」状態で記録タブから種目を選んだときの確認
 let sessionDeclinedFor = null; // 「今はしない」を選んだ日(この起動中は再度聞かない)
 function askSessionStart(then) {
@@ -1728,6 +1817,7 @@ function startDraftNow(exId, log=null) {
             : recRoutine ? 'record'   // ルーティン実行中は種目リストに戻る
             : 'map';
   draft = { exId, date: log ? log.date : pickDate, sets, logId: log ? log.id : null, ret, sug };
+  draft.snap = JSON.stringify(sets); // 初期状態のスナップショット(上書き確認の判定用)
   switchView('record');
 }
 
@@ -1735,13 +1825,15 @@ function startDraftNow(exId, log=null) {
    ダブルプログレッション方式(8〜12回レンジ):
    ・重量ありで前回12回以上 → 重量を1段階アップ(20kg未満:+1kg / 以上:+2.5kg)して8回に戻す
    ・それ以外(自重含む) → 回数を+1 */
-/* ジムのフリーウェイトに合わせ、提示する重量はすべて2.5kg刻みに丸める */
-function progressSets(sets) {
+/* ジムのフリーウェイトに合わせ、提示する重量はすべて2.5kg刻みに丸める。
+   ダブルプログレッション: 同重量で回数をレンジ上限まで伸ばす → 達したら+2.5kgして下限に戻る */
+function progressSets(sets, ex) {
+  const [lo, hi] = ex ? repRange(ex) : [8, 12];
   return sets.map(s => {
     const w = +s.w || 0, r = +s.r || 0;
-    if (w > 0 && r >= 12) {
+    if (w > 0 && r >= hi) {
       const nw = Math.ceil((w + 0.01) / 2.5) * 2.5; // 現在より上の2.5kg刻みへ
-      return { w: nw, r: 8 };
+      return { w: nw, r: lo };
     }
     return { w, r: r + 1 };
   });
@@ -1865,12 +1957,21 @@ function renderSetEditor(el) {
       <div class="muted" style="margin-top:6px;font-size:11px;">${note}</div>
     </div>`;
   }
+  // 種目別の推奨インターバル(実行中でなければ推奨値をプリセット。手動変更可)
+  const recRest = timeMode ? restChoice() : exRest(ex);
+  const cls = exClass(ex);
+  const [repLo, repHi] = repRange(ex);
+  const rirNote = cls === 'high'
+    ? '🔒 高疲労種目 — 各セット<b>余力1〜2回</b>で止めるのが目安。フォームを保ったまま終える(限界まで行くと腰・関節への負担が刺激を上回りがち)。'
+    : cls === 'safe'
+      ? '✅ 追い込みやすい種目 — <b>最終セットは余力0</b>(同じフォームでもう1回もできない)まで攻めてOK。'
+      : '目安: 各セット<b>余力1〜2回</b>。最終セットは余力0〜1まで攻めてもOK。';
   el.innerHTML = `
     <button class="backbtn" id="backToList">‹ 種目一覧へ</button>
     <div class="timerbar">
       <span class="tico">⏱</span>
       <select id="timerSec" aria-label="休憩秒数">
-        ${REST_CHOICES.map(s=>`<option value="${s}" ${s===restChoice()?'selected':''}>${s}</option>`).join('')}
+        ${REST_CHOICES.map(s=>`<option value="${s}" ${s===recRest?'selected':''}>${s}</option>`).join('')}
       </select>
       <span class="muted">秒</span>
       <span class="disp" id="timerDisp">${remain}</span>
@@ -1884,15 +1985,17 @@ function renderSetEditor(el) {
       <div class="muted" style="margin-bottom:10px;">${muscInfo}</div>
       ${showLast ? `<div class="lastrec">
         <div class="lr-hd"><span>Last Record : ${last.date.replace(/-/g,'/')}</span></div>
-        ${last.sets.map((s,i)=>`<div class="lr-sets">${i+1}　${timeMode ? `${s.r} 分${s.w>0?' (負荷 '+s.w+')':''}` : `${s.w>0?s.w.toFixed(1)+' kg':'自重'} × ${s.r} reps`}</div>`).join('')}
+        ${last.sets.map((s,i)=>`<div class="lr-sets">${i+1}　${timeMode ? `${s.r} 分${s.w>0?' (負荷 '+s.w+')':''}` : `${s.w>0?s.w.toFixed(1)+' kg':'自重'} × ${s.r} reps${s.rir!=null?` <span style="color:var(--text-muted);">余力${s.rir}</span>`:''}`}</div>`).join('')}
         <div class="row" style="margin-top:8px;">
           ${timeMode ? '' : '<button class="copybtn" id="deloadLast" style="flex:1 1 auto;">🌙 控えめ</button>'}
           <button class="copybtn" id="copyLast" style="flex:1 1 auto;">⧉ そのまま</button>
           ${timeMode ? '' : '<button class="copybtn olbtn" id="overloadLast" style="flex:1 1 auto;">📈 オーバーロード</button>'}
         </div>
-        ${timeMode ? '' : '<div class="muted" style="margin-top:6px;font-size:11px;">🌙 = 重量-10%で回数キープ(自重は回数-30%)。📈 = 前回12回以上のセットは重量アップして8回に、それ以外は+1回。提示重量はジムのプレートに合わせて2.5kg刻み。</div>'}
+        ${timeMode ? '' : `<div class="muted" style="margin-top:6px;font-size:11px;">🌙 = 重量-10%で回数キープ(自重は回数-30%)。📈 = ${repHi}回に達したセットは+2.5kgして${repLo}回から、それ以外は+1回(ダブルプログレッション)。</div>`}
       </div>` : ''}
       ${sugHTML}
+      ${warmupHTML(ex, draft.sets)}
+      ${timeMode ? '' : `<div class="muted" style="margin:12px 0 2px;font-size:11.5px;line-height:1.6;">${rirNote}<br>目標レップレンジ: <b>${repLo}〜${repHi}回</b>(上限に達したら次回+2.5kg) ・ 推奨インターバル: <b>${recRest >= 60 ? (recRest/60)+'分' : recRest+'秒'}</b></div>`}
       <div class="set-head"><span>ｾｯﾄ</span><span>${timeMode?'負荷・速度など(任意)':'重さ kg (0=自重)'}</span><span>${timeMode?'分':'回数'}</span><span>${timeMode?'':'RM'}</span><span></span></div>
       <div id="setRows"></div>
       <div class="row" style="margin-top:4px;">
@@ -1930,15 +2033,23 @@ function renderSetEditor(el) {
       <div class="set-row">
         <span class="setno">${i+1}</span>
         <input type="number" inputmode="decimal" step="0.5" min="0" data-i="${i}" data-f="w" value="${s.w}" placeholder="${timeMode?'任意':'kg'}">
-        <input type="number" inputmode="numeric" step="1" min="0" data-i="${i}" data-f="r" value="${s.r}" placeholder="${timeMode?'分':'回'}">
+        ${timeMode
+          ? `<input type="number" inputmode="numeric" step="1" min="0" data-i="${i}" data-f="r" value="${s.r}" placeholder="分">`
+          : `<select data-i="${i}" data-f="r" aria-label="回数">${repOptionsHTML(s.r)}</select>`}
         <span class="rmcell" id="rm-${i}">${timeMode?'':(s.w>0&&s.r>0?fmtRM(rm1(+s.w,+s.r)):'-')}</span>
         <button data-del="${i}" aria-label="セット削除">✕</button>
       </div>
-      <input class="memoinput" data-i="${i}" data-f="m" value="${esc(s.m||'')}" placeholder="メモ">`).join('');
-    $$('input', rowsEl).forEach(inp => inp.addEventListener('input', () => {
+      <div class="row" style="margin:0 0 8px;">
+        ${timeMode ? '' : `<select data-i="${i}" data-f="rir" style="flex:0 0 auto;font-size:12.5px;padding:8px 6px;" aria-label="余力回数(RIR)">
+          <option value="">余力 −</option>
+          ${Array.from({length:11},(_,n)=>`<option value="${n}" ${s.rir===n?'selected':''}>余力 ${n}回</option>`).join('')}
+        </select>`}
+        <input class="memoinput" data-i="${i}" data-f="m" value="${esc(s.m||'')}" placeholder="メモ: フォームや可動域など" style="flex:1;min-width:0;margin:0;">
+      </div>`).join('');
+    $$('input, select', rowsEl).forEach(inp => inp.addEventListener('input', () => {
       const i = +inp.dataset.i, f = inp.dataset.f;
       draft.sets[i][f] = f === 'm' ? inp.value : (inp.value === '' ? '' : +inp.value);
-      if (f !== 'm' && !timeMode) {
+      if ((f === 'w' || f === 'r') && !timeMode) {
         const s = draft.sets[i];
         $('#rm-'+i).textContent = (s.w>0&&s.r>0) ? fmtRM(rm1(+s.w,+s.r)) : '-';
       }
@@ -1951,21 +2062,23 @@ function renderSetEditor(el) {
   }
   drawRows();
   $('#timerGo', el).addEventListener('click', toggleRest);
+  // コピー系ボタン: 入力欄がすでに編集されていたら上書き前に確認する
+  const applyPreset = (makeSets, msg) => {
+    const doIt = () => {
+      draft.sets = makeSets();
+      draft.snap = JSON.stringify(draft.sets); // 適用後を新しい基準にする
+      drawRows(); toast(msg);
+    };
+    if (JSON.stringify(draft.sets) !== draft.snap) {
+      confirmModal('入力中の内容を上書きしますか?', 'すでに入力・編集されているセット内容が置き換えられます。トレーニング途中の誤タップならキャンセルしてください。', '上書きする', ok => { if (ok) doIt(); });
+    } else doIt();
+  };
   const copyBtn = $('#copyLast', el);
-  if (copyBtn) copyBtn.addEventListener('click', () => {
-    draft.sets = last.sets.map(s=>({w:s.w, r:s.r}));
-    drawRows(); toast('前回の記録をコピーしました');
-  });
+  if (copyBtn) copyBtn.addEventListener('click', () => applyPreset(() => last.sets.map(s=>({w:s.w, r:s.r})), '前回の記録をコピーしました'));
   const olBtn = $('#overloadLast', el);
-  if (olBtn) olBtn.addEventListener('click', () => {
-    draft.sets = progressSets(last.sets);
-    drawRows(); toast('前回より少し負荷を上げました 📈');
-  });
+  if (olBtn) olBtn.addEventListener('click', () => applyPreset(() => progressSets(last.sets, ex), '前回より少し負荷を上げました 📈'));
   const dlBtn = $('#deloadLast', el);
-  if (dlBtn) dlBtn.addEventListener('click', () => {
-    draft.sets = deloadSets(last.sets);
-    drawRows(); toast('今日は控えめに。無理せずいきましょう 🌙');
-  });
+  if (dlBtn) dlBtn.addEventListener('click', () => applyPreset(() => deloadSets(last.sets), '今日は控えめに。無理せずいきましょう 🌙'));
   $('#addSet', el).addEventListener('click', () => {
     const lastSet = draft.sets[draft.sets.length-1];
     draft.sets.push({ w: lastSet ? lastSet.w : '', r: lastSet ? lastSet.r : '' });
@@ -1977,7 +2090,12 @@ function renderSetEditor(el) {
   if (cancelBtn) cancelBtn.addEventListener('click', () => { const ret = draft.ret; draft = null; switchView(ret); });
   $('#saveLog', el).addEventListener('click', () => {
     const sets = draft.sets
-      .map(s => { const o = { w: +s.w || 0, r: +s.r || 0 }; if (s.m && String(s.m).trim()) o.m = String(s.m).trim(); return o; })
+      .map(s => {
+        const o = { w: +s.w || 0, r: +s.r || 0 };
+        if (s.m && String(s.m).trim()) o.m = String(s.m).trim();
+        if (s.rir !== '' && s.rir != null) o.rir = +s.rir;
+        return o;
+      })
       .filter(s => s.r > 0);
     if (!sets.length) { toast('回数を入力してください'); return; }
     let savedId;
