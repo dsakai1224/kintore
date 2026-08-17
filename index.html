@@ -1340,6 +1340,55 @@ function openShareSheet() {
   sheet.classList.add('open');
 }
 
+/* ---------- 月次バックアップ ---------- */
+// 1タップでバックアップ: iOSでは共有シートが開き「"ファイル"に保存」で保存先を選べる。非対応環境は通常ダウンロード
+async function doBackup() {
+  const json = JSON.stringify(state, null, 2);
+  const fname = `kintore-backup-${today()}.json`;
+  try {
+    const file = new File([json], fname, { type: 'application/json' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: '筋トレ記録バックアップ' });
+      state.settings.lastBackup = Date.now(); saveState();
+      toast('バックアップを書き出しました ✅');
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return; // 共有シートをキャンセル → 何もしない
+  }
+  const blob = new Blob([json], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = fname;
+  a.click(); URL.revokeObjectURL(a.href);
+  state.settings.lastBackup = Date.now(); saveState();
+  toast('バックアップを書き出しました ✅');
+}
+// 月25日以降にアプリを開いたとき、今月まだバックアップしていなければ1回だけ促す
+let backupPromptShown = false;
+function maybeShowBackupPrompt() {
+  if (backupPromptShown || !state.logs.length) return;
+  const t = today();
+  if (+t.slice(8,10) < 25) return;                                    // 月末(25日〜)のみ
+  const month = t.slice(0,7);
+  if (state.settings.backupSkippedMonth === month) return;            // 今月スキップ済み
+  if (Date.now() - (state.settings.lastBackup || 0) < 20*86400000) return; // 直近20日以内に済み
+  backupPromptShown = true;
+  const div = document.createElement('div');
+  div.className = 'modal-backdrop';
+  div.innerHTML = `<div class="modal-card">
+    <div style="font-size:17px;font-weight:800;">📦 月末バックアップの時間です</div>
+    <div class="muted" style="margin-top:8px;line-height:1.7;">記録データはこの端末の中だけに保存されています。万一に備えて月1回の書き出しをおすすめします。<br>${state.settings.lastBackup ? '前回: ' + new Date(state.settings.lastBackup).toLocaleDateString('ja-JP') : 'まだ一度も書き出していません。'}</div>
+    <button class="primary" id="bkNow" style="margin-top:14px;">📤 今すぐバックアップ(保存先を選ぶ)</button>
+    <button class="ghost" id="bkSkip" style="width:100%;margin-top:8px;">今月はスキップ</button>
+  </div>`;
+  document.body.appendChild(div);
+  $('#bkNow', div).addEventListener('click', async () => { div.remove(); await doBackup(); });
+  $('#bkSkip', div).addEventListener('click', () => {
+    state.settings.backupSkippedMonth = month; saveState(); div.remove();
+    toast('来月末にまたお知らせします');
+  });
+}
+
 /* ---------- ホーム ---------- */
 const MONTH_EN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 function daysInWeek(monday) {
@@ -1476,6 +1525,7 @@ function renderHome() {
     const log = state.logs.find(l=>l.id===c.dataset.log);
     if (log) startDraft(log.exId, log);
   }));
+  maybeShowBackupPrompt();
 }
 
 /* ---------- RM計算機 ---------- */
@@ -2494,13 +2544,7 @@ function renderSettings() {
       saveState(); renderSettings(); toast('ルーティンを削除しました');
     });
   }));
-  $('#btnExport').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `kintore-backup-${today()}.json`;
-    a.click(); URL.revokeObjectURL(a.href);
-  });
+  $('#btnExport').addEventListener('click', doBackup);
   $('#btnImport').addEventListener('click', () => $('#importFile').click());
   $('#importFile').addEventListener('change', e => {
     const f = e.target.files[0]; if (!f) return;
