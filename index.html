@@ -1434,18 +1434,41 @@ function renderHome() {
   const lwVol = volInRange(lwMon, thisMon);
   const pwVol = volInRange(addDays(lwMon,-7), lwMon);
   const volDiff = pwVol > 0 ? Math.round((lwVol - pwVol) / pwVol * 100) : null;
-  const lwPRs = lwDays ? prTimeline().events.filter(e => e.date >= lwMon && e.date < thisMon).length : 0;
-  let lwReport = '';
-  if (lwDays) {
+  // 週間レポート: 今週トレ済みなら「今週(進行中)」を先週の同時点と公平に比較して表示。
+  // 今週まだトレしていない(週明けなど)ときだけ「先週のまとめ」を表示する。
+  const thisDays = daysInWeek(thisMon);
+  const fmtVol = v => v >= 10000 ? (v/1000).toFixed(1)+'t' : Math.round(v).toLocaleString();
+  let weekReport = '';
+  if (thisDays > 0) {
+    const dayIdx = Math.round((parseDate(t) - parseDate(thisMon)) / 86400000); // 月曜=0
+    const twVol = volInRange(thisMon, addDays(thisMon, 7));
+    const lwSameVol = volInRange(lwMon, addDays(lwMon, dayIdx + 1)); // 先週の同じ曜日時点まで
+    const diff = lwSameVol > 0 ? Math.round((twVol - lwSameVol) / lwSameVol * 100) : null;
+    const twPRs = prTimeline().events.filter(e => e.date >= thisMon).length;
+    const twStats = weekStats(thisMon);
+    const achieved = MUSCLES.filter(m => twStats[m.id].sets >= targetFor(m.id)).length;
+    const touched = MUSCLES.filter(m => twStats[m.id].sets > 0).length;
+    weekReport = `
+    <div class="sectionhead" style="margin-top:14px;"><span>今週のレポート(進行中)</span></div>
+    <div class="card">
+      <div class="sumstrip" style="margin-bottom:8px;">
+        <div class="tile"><div class="v">${thisDays}<span style="font-size:12px;font-weight:400;color:var(--text-muted);">/${goalDays}日</span></div><div class="k">トレ日数(週目標比)</div></div>
+        <div class="tile"><div class="v">${fmtVol(twVol)}</div><div class="k">総ボリューム${diff != null ? `(先週同時点${diff>=0?'+':''}${diff}%)` : ''}</div></div>
+        <div class="tile"><div class="v">${twPRs}</div><div class="k">🏆 ベスト更新</div></div>
+      </div>
+      <div class="muted" style="font-size:12px;">部位カバー: 目標達成 ${achieved}/${MUSCLES.length}・着手 ${touched}/${MUSCLES.length}${lwDays ? `　|　先週の実績: ${lwDays}日・${fmtVol(lwVol)}kg` : ''}</div>
+    </div>`;
+  } else if (lwDays) {
+    const lwPRs = prTimeline().events.filter(e => e.date >= lwMon && e.date < thisMon).length;
     const lwStats = weekStats(lwMon);
     const achieved = MUSCLES.filter(m => lwStats[m.id].sets >= targetFor(m.id)).length;
     const touched = MUSCLES.filter(m => lwStats[m.id].sets > 0).length;
-    lwReport = `
-    <div class="sectionhead" style="margin-top:14px;"><span>先週のレポート(${jpDate(lwMon)}〜)</span></div>
+    weekReport = `
+    <div class="sectionhead" style="margin-top:14px;"><span>先週のまとめ(${jpDate(lwMon)}〜) — 今週も頑張りましょう</span></div>
     <div class="card">
       <div class="sumstrip" style="margin-bottom:8px;">
         <div class="tile"><div class="v">${lwDays}</div><div class="k">トレ日数</div></div>
-        <div class="tile"><div class="v">${lwVol>=10000?(lwVol/1000).toFixed(1)+'t':Math.round(lwVol).toLocaleString()}</div><div class="k">総ボリューム${volDiff!=null?`(${volDiff>=0?'+':''}${volDiff}%)`:''}</div></div>
+        <div class="tile"><div class="v">${fmtVol(lwVol)}</div><div class="k">総ボリューム${volDiff!=null?`(${volDiff>=0?'+':''}${volDiff}%)`:''}</div></div>
         <div class="tile"><div class="v">${lwPRs}</div><div class="k">🏆 ベスト更新</div></div>
       </div>
       <div class="muted" style="font-size:12px;">部位カバー: 目標達成 ${achieved}/${MUSCLES.length}・着手 ${touched}/${MUSCLES.length}</div>
@@ -1479,7 +1502,7 @@ function renderHome() {
         <figure>${buildBodyMap('back')}<figcaption>背面</figcaption></figure>
       </div>
     </div>
-    ${lwReport}
+    ${weekReport}
     ${todayLogs.length ? `<div class="sectionhead"><span>本日のトレーニング</span><button id="goToday">詳細 ›</button></div>` : ''}
     ${todayLogs.map(l => {
       const ex = exById(l.exId);
