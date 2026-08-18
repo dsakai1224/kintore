@@ -437,6 +437,9 @@ button.outline {
   display:flex; align-items:center; gap: 6px;
   border: 1.5px solid var(--accent); border-radius: 999px;
   padding: 5px 6px 5px 14px; margin-bottom: 12px; background: var(--surface-1);
+  /* スクロールしても画面上部(ヘッダーの下)に貼り付いて残り時間が見える */
+  position: sticky; top: calc(env(safe-area-inset-top) + 56px); z-index: 25;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.10);
 }
 .timerbar .tico { font-size: 18px; }
 .timerbar select { text-align:center; border:none; background:none; font-size: 18px; font-weight: 700; padding: 2px 4px; border-bottom: 1.5px solid var(--grid); border-radius: 0; color: var(--text-primary); }
@@ -595,6 +598,14 @@ const EXERCISES = [
   { id:'rdl',          cat:'脚', name:'ルーマニアンデッドリフト',  m:{hams:1, glutes:0.75, lowback:0.5, forearm:0.25} },
   { id:'hipthrust',    cat:'脚', name:'ヒップスラスト',           m:{glutes:1, hams:0.5, quads:0.25} },
   { id:'thruster',     cat:'脚', name:'スラスター',              m:{quads:1, deltF:0.75, glutes:0.75, triceps:0.5, hams:0.5, abs:0.25, lowback:0.25, adductor:0.25} },
+  /* コンビネーション種目: 1セット=フロントスクワット→スラスターを続けて各(入力回数)回。
+     combo:2 は「1セットで2動作ぶんの仕事量」の意味で、総重量の計算に使う。
+     筋肉係数は両種目のマージ(同じ筋肉は高い方を採用)。 */
+  /* step:5 = このジムの器具が5kg刻みのため。重量ジャンプが大きいぶんレップレンジを8〜15に広げて
+     「回数で伸ばす期間」を長く取る(ダブルプログレッション) */
+  { id:'fsq_thruster', cat:'脚', name:'フロントスクワット&スラスター', combo:2, step:5,
+    note:'1セット = フロントスクワット→スラスターを続けて実施。回数欄には片方の動作の回数を入力(10と入れれば各10回ずつの意味。総重量は2動作ぶん自動計算)。',
+    m:{quads:1, glutes:0.75, deltF:0.75, hams:0.5, triceps:0.5, abs:0.5, adductor:0.5, lowback:0.25} },
   { id:'calfraise',    cat:'脚', name:'カーフレイズ',            m:{calves:1} },
   { id:'adduction',    cat:'脚', name:'アダクション',            m:{adductor:1} },
   // --- 体幹 ---
@@ -651,6 +662,7 @@ const STD_RX = {
   rdl:         { bw:[0.50,0.80,1.10] },
   hipthrust:   { bw:[0.80,1.20,1.70] },
   thruster:    { bw:[0.25,0.40,0.55] },
+  fsq_thruster:{ bw:[0.25,0.40,0.55] },
   calfraise:   { reps:[15,20,25] },
   adduction:   { bw:[0.30,0.45,0.60] },
   crunch:      { reps:[15,20,25] },
@@ -733,7 +745,7 @@ function weekStats(monday) {
     const ex = exById(log.exId);
     if (!ex) continue;
     const nWork = workSetCount(log);
-    const tonnage = log.sets.reduce((a,s)=>a + (s.w||0)*(s.r||0), 0);
+    const tonnage = log.sets.reduce((a,s)=>a + (s.w||0)*(s.r||0), 0) * (ex.combo || 1);
     for (const [mid, coef] of Object.entries(ex.m)) {
       if (!res[mid]) continue;
       const counted = coef >= 0.5 ? nWork * coef : 0;
@@ -853,7 +865,7 @@ function recommendExercises(n = 3) {
    ・安全なマシン/ケーブル/アイソレーションは最終セット余力0(RPE10)までOK
    ・インターバル: 下半身高重量2〜5分 / 上半身メイン2〜3分 / マシン1.5〜3分 / アイソ1〜2分 */
 const EX_CLASS = {
-  high: ['squat','frontsquat','deadlift','rdl','legpress','bentrow','thruster','bulgarian','lunge'],
+  high: ['squat','frontsquat','deadlift','rdl','legpress','bentrow','thruster','bulgarian','lunge','fsq_thruster'],
   safe: ['sideraise','frontraise','rearraise','facepull','shrug','bbcurl','dbcurl','hammercurl',
          'pressdown','skullcrusher','kickback','wristcurl','legext','legcurl','calfraise','adduction',
          'cablecross','dbfly','chestpress','latpulldown','seatedrow','backext','crunch','legraise',
@@ -867,6 +879,7 @@ function exClass(ex) {
 }
 // 種目ごとの目標レップレンジ(ダブルプログレッション用)
 function repRange(ex) {
+  if (ex.id === 'fsq_thruster') return [8,15]; // 5kg刻みのジャンプを回数の幅で吸収する
   if (['calfraise','crunch','legraise','russiantwist','sidebend','abroller','plank'].includes(ex.id)) return [12,20];
   const c = exClass(ex);
   if (c === 'high') return [6,10];
@@ -888,7 +901,8 @@ function warmupHTML(ex, sets) {
   if (!ex || ex.time) return '';
   const main = Math.max(0, ...sets.map(s => +s.w || 0));
   if (main < 20) return '';
-  const r = w => Math.max(2.5, Math.round(w / 2.5) * 2.5);
+  const st = exStep(ex);
+  const r = w => Math.max(st, Math.round(w / st) * st);
   const cls = exClass(ex);
   let body;
   if (cls === 'safe') {
@@ -914,9 +928,10 @@ function warmupHTML(ex, sets) {
 /* ---------- 標準的な実施重量・回数の提案 ----------
    優先順: ①その種目の履歴があれば推定1RMの80%(=10RM相当) ②自重種目はトレ歴別の標準回数
    ③体重×トレ歴の標準比(STD_RX) ④どれも無ければ一般則のみ。回数は筋肥大の基本レンジから10回。 */
-function roundLoad(w) { return Math.max(2.5, Math.round(w / 2.5) * 2.5); } // 2.5kg刻み(ジムのフリーウェイト単位)
+function roundLoad(w, step = 2.5) { return Math.max(step, Math.round(w / step) * step); } // 器具の刻みに丸める
 function suggestPrescription(ex) {
   if (!ex || ex.time) return null;
+  const st = exStep(ex);
   const p = state.settings.profile || {};
   const nSets = p.goal === 'maintain' ? 2 : 3;
   let best = 0;
@@ -924,11 +939,11 @@ function suggestPrescription(ex) {
     if (l.exId !== ex.id) continue;
     for (const s of l.sets) { const v = rm1(+s.w, +s.r); if (v && v > best) best = v; }
   }
-  if (best > 0) return { w: roundLoad(best / 1.25), r: 10, sets: nSets, src: '推定1RMの80%' };
+  if (best > 0) return { w: roundLoad(best / 1.25, st), r: 10, sets: nSets, src: '推定1RMの80%' };
   const rx = STD_RX[ex.id];
   const lvl = { b: 0, i: 1, a: 2 }[p.exp] != null ? { b: 0, i: 1, a: 2 }[p.exp] : 0;
   if (rx && rx.reps) return { w: 0, r: rx.reps[lvl], sets: nSets, src: 'トレ歴の標準' };
-  if (rx && rx.bw && +p.bw > 0) return { w: roundLoad(p.bw * rx.bw[lvl]), r: 10, sets: nSets, ph: !!rx.ph, src: '体重×トレ歴の標準' };
+  if (rx && rx.bw && +p.bw > 0) return { w: roundLoad(p.bw * rx.bw[lvl], st), r: 10, sets: nSets, ph: !!rx.ph, src: '体重×トレ歴の標準' };
   return { w: null, r: 10, sets: nSets, src: null };
 }
 
@@ -1077,7 +1092,7 @@ function fmtRM(v) {
 function tonnageOf(log) {
   const ex = exById(log.exId);
   if (ex && ex.time) return 0; // 有酸素は負荷量(kg)に含めない
-  return log.sets.reduce((a,s)=>a+(s.w||0)*(s.r||0), 0);
+  return log.sets.reduce((a,s)=>a+(s.w||0)*(s.r||0), 0) * (ex && ex.combo ? ex.combo : 1);
 }
 function volInRange(from, toExcl) { // 'YYYY-MM-DD'区間の総負荷量(kg)
   return state.logs.reduce((a,l)=> (l.date >= from && l.date < toExcl) ? a + tonnageOf(l) : a, 0);
@@ -1104,7 +1119,7 @@ function prTimeline() {
     const weighted = l.sets.some(s => +s.w > 0);
     if (weighted) {
       push('rm1', Math.max(...l.sets.map(s=>rm1(+s.w,+s.r)||0)));
-      push('vol', l.sets.reduce((a,s)=>a+(+s.w||0)*(+s.r||0),0));
+      push('vol', l.sets.reduce((a,s)=>a+(+s.w||0)*(+s.r||0),0) * (ex.combo || 1));
     } else {
       push('reps', Math.max(...l.sets.map(s=>+s.r||0)));
       push('repsTotal', l.sets.reduce((a,s)=>a+(+s.r||0),0));
@@ -1144,11 +1159,12 @@ function showPRCelebration(exName, evts) {
    直近15セッションまで。点をタップすると日付と値をトースト表示。 */
 function sessionSeries(exId) {
   const logs = state.logs.filter(l=>l.exId===exId).sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:0);
+  const cmb = (exById(exId) || {}).combo || 1;
   const out = [];
   for (const l of logs) {
     const weighted = l.sets.some(s=>+s.w>0);
     if (weighted) {
-      out.push({ date:l.date, rm: Math.max(...l.sets.map(s=>rm1(+s.w,+s.r)||0)), vol: l.sets.reduce((a,s)=>a+(+s.w||0)*(+s.r||0),0) });
+      out.push({ date:l.date, rm: Math.max(...l.sets.map(s=>rm1(+s.w,+s.r)||0)), vol: l.sets.reduce((a,s)=>a+(+s.w||0)*(+s.r||0),0) * cmb });
     } else {
       out.push({ date:l.date, reps: Math.max(...l.sets.map(s=>+s.r||0)), repsTotal: l.sets.reduce((a,s)=>a+(+s.r||0),0) });
     }
@@ -1257,7 +1273,8 @@ function fmtLogText(l) {
   const extra = [];
   if (ton > 0) extra.push(`種目内総重量 ${Math.round(ton).toLocaleString()}kg`);
   if (best > 0) extra.push(`推定1RM ${fmtRM(best)}kg`);
-  return `■ ${name}${ex?`(${ex.cat})`:''}\n${lines.join('\n')}${extra.length?`\n  ${extra.join(' / ')}`:''}`;
+  const comboNote = (ex && ex.combo) ? `\n  ※コンビネーション種目: 1セットで${ex.combo}動作を連続実施(表記回数は各動作の回数。総重量は${ex.combo}動作ぶんを含む)` : '';
+  return `■ ${name}${ex?`(${ex.cat})`:''}\n${lines.join('\n')}${extra.length?`\n  ${extra.join(' / ')}`:''}${comboNote}`;
 }
 // dates(YYYY-MM-DD配列)の記録をGemini等に貼り付けやすいテキストにする
 function exportText(dates) {
@@ -1940,25 +1957,28 @@ function startDraftNow(exId, log=null) {
    ダブルプログレッション方式(8〜12回レンジ):
    ・重量ありで前回12回以上 → 重量を1段階アップ(20kg未満:+1kg / 以上:+2.5kg)して8回に戻す
    ・それ以外(自重含む) → 回数を+1 */
-/* ジムのフリーウェイトに合わせ、提示する重量はすべて2.5kg刻みに丸める。
-   ダブルプログレッション: 同重量で回数をレンジ上限まで伸ばす → 達したら+2.5kgして下限に戻る */
+/* 提示する重量はジムの器具の刻みに丸める(既定2.5kg、種目ごとにstepで上書き可。例: 5kg刻みの器具)。
+   ダブルプログレッション: 同重量で回数をレンジ上限まで伸ばす → 達したら1段重くして下限に戻る */
+function exStep(ex) { return (ex && ex.step) || 2.5; }
 function progressSets(sets, ex) {
   const [lo, hi] = ex ? repRange(ex) : [8, 12];
+  const st = exStep(ex);
   return sets.map(s => {
     const w = +s.w || 0, r = +s.r || 0;
     if (w > 0 && r >= hi) {
-      const nw = Math.ceil((w + 0.01) / 2.5) * 2.5; // 現在より上の2.5kg刻みへ
+      const nw = Math.ceil((w + 0.01) / st) * st; // 現在より上の刻みへ
       return { w: nw, r: lo };
     }
     return { w, r: r + 1 };
   });
 }
-// 控えめ(体調いまいちな日): 重量は約-10%を2.5kg刻みに切り下げ・回数キープ、自重は回数-30%
-function deloadSets(sets) {
+// 控えめ(体調いまいちな日): 重量は約-10%を器具の刻みに切り下げ・回数キープ、自重は回数-30%
+function deloadSets(sets, ex) {
+  const st = exStep(ex);
   return sets.map(s => {
     const w = +s.w || 0, r = +s.r || 0;
     if (w > 0) {
-      const nw = Math.max(2.5, Math.floor(w * 0.9 / 2.5) * 2.5);
+      const nw = Math.max(st, Math.floor(w * 0.9 / st) * st);
       return { w: Math.min(nw, w), r };
     }
     return { w: 0, r: Math.max(1, Math.ceil(r * 0.7)) };
@@ -2031,17 +2051,22 @@ function timerTick() {
     beepDone();
   }
 }
-function toggleRest() {
-  if (restTimerId) { clearInterval(restTimerId); restTimerId = null; timerTick(); return; }
+function startRest() {
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
   } catch(e) {}
+  if (restTimerId) { clearInterval(restTimerId); restTimerId = null; }
   const sec = +($('#timerSec') ? $('#timerSec').value : 0) || restChoice();
-  state.settings.restSec = sec; saveState();
   restEnd = Date.now() + sec*1000;
   restTimerId = setInterval(timerTick, 250);
   timerTick();
+}
+function toggleRest() {
+  if (restTimerId) { clearInterval(restTimerId); restTimerId = null; timerTick(); return; }
+  const sec = +($('#timerSec') ? $('#timerSec').value : 0) || restChoice();
+  state.settings.restSec = sec; saveState();
+  startRest();
 }
 
 function renderSetEditor(el) {
@@ -2076,6 +2101,7 @@ function renderSetEditor(el) {
   const recRest = timeMode ? restChoice() : exRest(ex);
   const cls = exClass(ex);
   const [repLo, repHi] = repRange(ex);
+  const wStep = exStep(ex);
   const rirNote = cls === 'high'
     ? '🔒 高疲労種目 — 各セット<b>余力1〜2回</b>で止めるのが目安。フォームを保ったまま終える(限界まで行くと腰・関節への負担が刺激を上回りがち)。'
     : cls === 'safe'
@@ -2098,6 +2124,7 @@ function renderSetEditor(el) {
         <input type="date" id="dDate" value="${draft.date}" style="padding:6px 8px;font-size:14px;">
       </div>
       <div class="muted" style="margin-bottom:10px;">${muscInfo}</div>
+      ${ex.note ? `<div class="muted" style="margin:-4px 0 10px;font-size:11.5px;line-height:1.6;">ℹ️ ${ex.note}</div>` : ''}
       ${showLast ? `<div class="lastrec">
         <div class="lr-hd"><span>Last Record : ${last.date.replace(/-/g,'/')}</span></div>
         ${last.sets.map((s,i)=>`<div class="lr-sets">${i+1}　${timeMode ? `${s.r} 分${s.w>0?' (負荷 '+s.w+')':''}` : `${s.w>0?s.w.toFixed(1)+' kg':'自重'} × ${s.r} reps${s.rir!=null?` <span style="color:var(--text-muted);">余力${s.rir}</span>`:''}`}</div>`).join('')}
@@ -2106,11 +2133,11 @@ function renderSetEditor(el) {
           <button class="copybtn" id="copyLast" style="flex:1 1 auto;">⧉ そのまま</button>
           ${timeMode ? '' : '<button class="copybtn olbtn" id="overloadLast" style="flex:1 1 auto;">📈 オーバーロード</button>'}
         </div>
-        ${timeMode ? '' : `<div class="muted" style="margin-top:6px;font-size:11px;">🌙 = 重量-10%で回数キープ(自重は回数-30%)。📈 = ${repHi}回に達したセットは+2.5kgして${repLo}回から、それ以外は+1回(ダブルプログレッション)。</div>`}
+        ${timeMode ? '' : `<div class="muted" style="margin-top:6px;font-size:11px;">🌙 = 重量-10%で回数キープ(自重は回数-30%)。📈 = ${repHi}回に達したセットは+${wStep}kgして${repLo}回から、それ以外は+1回(ダブルプログレッション)。</div>`}
       </div>` : ''}
       ${sugHTML}
       ${warmupHTML(ex, draft.sets)}
-      ${timeMode ? '' : `<div class="muted" style="margin:12px 0 2px;font-size:11.5px;line-height:1.6;">${rirNote}<br>目標レップレンジ: <b>${repLo}〜${repHi}回</b>(上限に達したら次回+2.5kg) ・ 推奨インターバル: <b>${recRest >= 60 ? (recRest/60)+'分' : recRest+'秒'}</b></div>`}
+      ${timeMode ? '' : `<div class="muted" style="margin:12px 0 2px;font-size:11.5px;line-height:1.6;">${rirNote}<br>目標レップレンジ: <b>${repLo}〜${repHi}回</b>(上限に達したら次回+${wStep}kg) ・ 推奨インターバル: <b>${recRest >= 60 ? (recRest/60)+'分' : recRest+'秒'}</b>(回数を入力すると自動でカウントダウン開始)</div>`}
       <div class="set-head"><span>ｾｯﾄ</span><span>${timeMode?'負荷・速度など(任意)':'重さ kg (0=自重)'}</span><span>${timeMode?'分':'回数'}</span><span>${timeMode?'':'RM'}</span><span></span></div>
       <div id="setRows"></div>
       <div class="row" style="margin-top:4px;">
@@ -2169,6 +2196,8 @@ function renderSetEditor(el) {
         const s = draft.sets[i];
         $('#rm-'+i).textContent = (s.w>0&&s.r>0) ? fmtRM(rm1(+s.w,+s.r)) : '-';
       }
+      // 回数を入力した=セット完了 → 休憩タイマーを自動スタート(今日の記録のみ)
+      if (f === 'r' && !timeMode && +inp.value > 0 && draft.date === today()) startRest();
     }));
     $$('button[data-del]', rowsEl).forEach(b => b.addEventListener('click', () => {
       draft.sets.splice(+b.dataset.del,1);
@@ -2194,7 +2223,7 @@ function renderSetEditor(el) {
   const olBtn = $('#overloadLast', el);
   if (olBtn) olBtn.addEventListener('click', () => applyPreset(() => progressSets(last.sets, ex), '前回より少し負荷を上げました 📈'));
   const dlBtn = $('#deloadLast', el);
-  if (dlBtn) dlBtn.addEventListener('click', () => applyPreset(() => deloadSets(last.sets), '今日は控えめに。無理せずいきましょう 🌙'));
+  if (dlBtn) dlBtn.addEventListener('click', () => applyPreset(() => deloadSets(last.sets, ex), '今日は控えめに。無理せずいきましょう 🌙'));
   $('#addSet', el).addEventListener('click', () => {
     const lastSet = draft.sets[draft.sets.length-1];
     draft.sets.push({ w: lastSet ? lastSet.w : '', r: lastSet ? lastSet.r : '' });
