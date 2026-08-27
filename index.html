@@ -186,6 +186,24 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 /* ---- record view ---- */
 /* 回数セレクトの「提案値」表示(未入力のときグレーで前回の回数を見せる。入力値ではない) */
 .set-row select.sugsel { color: var(--text-muted); }
+
+/* フォームガイド: 2ポーズの交互表示(GIF風)+効かせる部位の赤い脈動 */
+.fg-wrap { background: var(--heat-0); border-radius: 12px; padding: 6px 4px 2px; }
+.fg-wrap svg { width: 100%; height: auto; display: block; }
+.fg-body { stroke: var(--text-secondary); stroke-width: 4.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.fg-head { fill: var(--text-secondary); }
+.fg-gear { stroke: var(--baseline); stroke-width: 5; fill: none; stroke-linecap: round; }
+.fg-plate { fill: var(--baseline); }
+.fg-floor { stroke: var(--grid); stroke-width: 2; }
+.fg-label { font-size: 10.5px; fill: var(--text-muted); font-weight: 650; }
+.fg-p1 { animation: fgA 3.6s infinite; }
+.fg-p2 { animation: fgB 3.6s infinite; }
+@keyframes fgA { 0%, 42% { opacity: 1; } 50%, 92% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes fgB { 0%, 42% { opacity: 0; } 50%, 92% { opacity: 1; } 100% { opacity: 0; } }
+.fg-pulse { fill: var(--accent); animation: fgPulse 1.2s ease-in-out infinite; }
+@keyframes fgPulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.8; } }
+.fg-cue { font-size: 12.5px; line-height: 1.75; color: var(--text-secondary); margin-top: 4px; }
+.fg-feel { margin-top: 10px; font-size: 12.5px; font-weight: 700; color: var(--accent); line-height: 1.6; }
 /* 検索中は「ルーティン/今週のおすすめ」を上にスライドして畳む */
 #topWrap { overflow:hidden; transition: max-height .35s ease, opacity .25s ease; }
 #topWrap.collapsed { max-height: 0 !important; opacity: 0; }
@@ -925,6 +943,415 @@ function warmupHTML(ex, sets) {
     <summary style="cursor:pointer;font-weight:700;font-size:13px;">🔥 ウォームアップ目安(メイン ${main}kg 想定)</summary>
     <div style="margin-top:6px;">${body}</div>
   </details>`;
+}
+
+/* ---------- フォームガイド ----------
+   実写GIFの代わりに、2ポーズが交互に切り替わるアニメーションSVG(GIF風)で
+   フォームの要点を示す。赤く脈打つ部分=力(伸び)を感じているべき部位。 */
+const FORM_GUIDES = {
+  benchpress: {
+    feel: '大胸筋。特に下ろした位置で胸の「伸び」を感じること。肩や腕が先に疲れるなら手幅かブリッジを見直す',
+    cues: [
+      '手幅は肩幅の約1.5倍(81cmラインに指がかかる程度)',
+      '肩甲骨を寄せて下げ、軽くブリッジを作って肩を守る',
+      'バーはみぞおち〜乳頭のラインへ、2〜3秒かけてコントロールして下ろす',
+      'ボトムで胸のストレッチを感じてから、足で床を踏みつつ一気に押す',
+      '手首は寝かせず、バーの真下に前腕が垂直に立つ位置で握る',
+    ],
+    svg: `<svg viewBox="0 0 220 150">
+      <line class="fg-floor" x1="10" y1="140" x2="210" y2="140"/>
+      <rect x="35" y="100" width="130" height="8" rx="3" class="fg-plate"/>
+      <line class="fg-gear" x1="55" y1="108" x2="55" y2="140"/><line class="fg-gear" x1="145" y1="108" x2="145" y2="140"/>
+      <g class="fg-p1">
+        <text class="fg-label" x="12" y="18">① スタート(腕は垂直)</text>
+        <circle class="fg-head" cx="48" cy="92" r="8"/>
+        <path class="fg-body" d="M58,96 L112,96 L130,118 L130,140"/>
+        <path class="fg-body" d="M74,96 L74,58"/>
+        <circle class="fg-plate" cx="74" cy="52" r="10"/>
+      </g>
+      <g class="fg-p2">
+        <text class="fg-label" x="12" y="18">② ボトム(胸で伸びを感じる)</text>
+        <circle class="fg-head" cx="48" cy="92" r="8"/>
+        <path class="fg-body" d="M58,96 L112,96 L130,118 L130,140"/>
+        <path class="fg-body" d="M74,96 L88,82 L80,72"/>
+        <circle class="fg-plate" cx="78" cy="68" r="10"/>
+        <ellipse class="fg-pulse" cx="76" cy="93" rx="12" ry="6"/>
+      </g>
+    </svg>`,
+  },
+  squat: {
+    feel: '大腿四頭筋と臀部。ボトムで太もも前面とお尻の張りを感じる。腰が先にキツいなら前傾しすぎ',
+    cues: [
+      'バーは僧帽筋の上に担ぎ、手幅は肩より少し広く・肘は軽く下へ',
+      '足幅は肩幅〜やや広め、つま先は20〜30度外へ',
+      '股関節と膝を同時に曲げ、「椅子に座る」ように腰を下ろす',
+      '太ももが床と平行になる深さまで(膝に痛みが出ない範囲で)',
+      '目線は前へ。かかと重心のまま、床を押して立ち上がる',
+    ],
+    svg: `<svg viewBox="0 0 220 150">
+      <line class="fg-floor" x1="10" y1="140" x2="210" y2="140"/>
+      <g class="fg-p1">
+        <text class="fg-label" x="12" y="18">① スタート</text>
+        <circle class="fg-head" cx="80" cy="32" r="8"/>
+        <path class="fg-body" d="M80,40 L80,85 L80,112 L80,140"/>
+        <path class="fg-body" d="M80,52 L94,44"/>
+        <circle class="fg-plate" cx="80" cy="46" r="10"/>
+      </g>
+      <g class="fg-p2">
+        <text class="fg-label" x="12" y="18">② ボトム(平行まで)</text>
+        <circle class="fg-head" cx="66" cy="62" r="8"/>
+        <path class="fg-body" d="M68,70 L84,94 L64,114 L74,140"/>
+        <path class="fg-body" d="M72,76 L86,70"/>
+        <circle class="fg-plate" cx="70" cy="72" r="10"/>
+        <ellipse class="fg-pulse" cx="74" cy="104" rx="13" ry="7"/>
+        <ellipse class="fg-pulse" cx="88" cy="94" rx="8" ry="6"/>
+      </g>
+    </svg>`,
+  },
+  frontsquat: {
+    feel: '大腿四頭筋(バックスクワットより前もも集中)。体幹前面で潰れないよう支える感覚も重要',
+    cues: [
+      'バーは鎖骨と肩の上に乗せ、肘を高く上げて「棚」を作る',
+      '手は添えるだけ(指2〜3本でもOK)。握り込まない',
+      '上体をバックスクワットより立てたまま、真下にしゃがむ',
+      '肘が下がるとバーが落ちる。常に肘を高く保つ',
+      'ボトムでも背中を丸めない。前ももの張りを感じながら立つ',
+    ],
+    svg: `<svg viewBox="0 0 220 150">
+      <line class="fg-floor" x1="10" y1="140" x2="210" y2="140"/>
+      <g class="fg-p1">
+        <text class="fg-label" x="12" y="18">① スタート(肘を高く)</text>
+        <circle class="fg-head" cx="90" cy="32" r="8"/>
+        <path class="fg-body" d="M90,40 L90,85 L90,112 L90,140"/>
+        <path class="fg-body" d="M90,52 L106,48 L114,40"/>
+        <circle class="fg-plate" cx="100" cy="47" r="10"/>
+      </g>
+      <g class="fg-p2">
+        <text class="fg-label" x="12" y="18">② ボトム(上体は立てたまま)</text>
+        <circle class="fg-head" cx="84" cy="60" r="8"/>
+        <path class="fg-body" d="M85,68 L92,94 L70,112 L80,140"/>
+        <path class="fg-body" d="M87,74 L103,70 L111,62"/>
+        <circle class="fg-plate" cx="97" cy="69" r="10"/>
+        <ellipse class="fg-pulse" cx="80" cy="103" rx="13" ry="7"/>
+      </g>
+    </svg>`,
+  },
+  deadlift: {
+    feel: '脊柱起立筋・臀部・ハムストリングス。背中を「板」にしたまま、脚とお尻で床を押す感覚',
+    cues: [
+      'バーはスネに触れる位置。足幅は腰幅、手は膝の外',
+      '胸を張り、背中をまっすぐに固めてから引き始める',
+      '腕で引かない。「脚で床を押しながら立ち上がる」イメージ',
+      'バーは常に体に沿わせて垂直に動かす',
+      'トップで腰を反らない。直立で終わり。下ろしもコントロール',
+    ],
+    svg: `<svg viewBox="0 0 220 150">
+      <line class="fg-floor" x1="10" y1="140" x2="210" y2="140"/>
+      <g class="fg-p1">
+        <text class="fg-label" x="12" y="18">① スタート(背中は板)</text>
+        <circle class="fg-head" cx="82" cy="68" r="8"/>
+        <path class="fg-body" d="M88,74 L112,98 L118,120 L118,140"/>
+        <path class="fg-body" d="M93,80 L128,124"/>
+        <circle class="fg-plate" cx="130" cy="127" r="12"/>
+        <ellipse class="fg-pulse" cx="103" cy="89" rx="12" ry="6" transform="rotate(45 103 89)"/>
+      </g>
+      <g class="fg-p2">
+        <text class="fg-label" x="12" y="18">② ロックアウト(直立で終了)</text>
+        <circle class="fg-head" cx="100" cy="32" r="8"/>
+        <path class="fg-body" d="M100,40 L100,88 L100,140"/>
+        <path class="fg-body" d="M100,52 L106,94"/>
+        <circle class="fg-plate" cx="107" cy="98" r="12"/>
+        <ellipse class="fg-pulse" cx="98" cy="90" rx="9" ry="7"/>
+      </g>
+    </svg>`,
+  },
+  chinup: {
+    feel: '広背筋(脇の下〜背中の外側)。腕ではなく「肘を腰に引き寄せる」意識で背中で引く',
+    cues: [
+      '手幅は肩幅より拳1〜2個広く、順手で握る',
+      'ぶら下がったら肩をすくめず、肩甲骨を軽く下げて構える',
+      '「バーを引く」ではなく「肘を脇腹へ引き下ろす」イメージ',
+      '胸をバーに近づけるように、みぞおちから上げる',
+      '下ろす局面こそゆっくり。広背筋が伸びるのを感じながら戻る',
+    ],
+    svg: `<svg viewBox="0 0 220 150">
+      <line class="fg-gear" x1="55" y1="25" x2="165" y2="25"/>
+      <line class="fg-floor" x1="55" y1="25" x2="55" y2="12"/><line class="fg-floor" x1="165" y1="25" x2="165" y2="12"/>
+      <g class="fg-p1">
+        <text class="fg-label" x="12" y="145">① ぶら下がり(広背筋が伸びる)</text>
+        <circle class="fg-head" cx="110" cy="48" r="8"/>
+        <path class="fg-body" d="M95,25 L103,54 M125,25 L117,54"/>
+        <path class="fg-body" d="M110,56 L110,98 M110,98 L103,122 M110,98 L117,122"/>
+        <ellipse class="fg-pulse" cx="100" cy="66" rx="6" ry="10"/>
+        <ellipse class="fg-pulse" cx="120" cy="66" rx="6" ry="10"/>
+      </g>
+      <g class="fg-p2">
+        <text class="fg-label" x="12" y="145">② トップ(肘を脇腹へ)</text>
+        <circle class="fg-head" cx="110" cy="20" r="8"/>
+        <path class="fg-body" d="M95,25 L96,40 L104,32 M125,25 L124,40 L116,32"/>
+        <path class="fg-body" d="M110,30 L110,72 M110,72 L103,96 M110,72 L117,96"/>
+        <ellipse class="fg-pulse" cx="100" cy="45" rx="6" ry="10"/>
+        <ellipse class="fg-pulse" cx="120" cy="45" rx="6" ry="10"/>
+      </g>
+    </svg>`,
+  },
+  sideraise: {
+    feel: '三角筋中部(肩の横)。僧帽筋(首の付け根)に力が入るなら重すぎ。肩をすくめないこと',
+    cues: [
+      '肘は軽く曲げたまま固定。小指側をやや上に向ける意識',
+      '真横〜やや斜め前(30度)に、肩の高さまで上げる',
+      '肩をすくめない。首の付け根に効いたら重量を下げる',
+      '反動を使わず、下ろしは2〜3秒かけて負荷を逃がさない',
+      '「遠くに投げる」ように腕を長く使うと肩に乗りやすい',
+    ],
+    svg: `<svg viewBox="0 0 220 150">
+      <line class="fg-floor" x1="10" y1="140" x2="210" y2="140"/>
+      <g class="fg-p1">
+        <text class="fg-label" x="12" y="18">① スタート</text>
+        <circle class="fg-head" cx="110" cy="32" r="8"/>
+        <path class="fg-body" d="M110,40 L110,88 M110,88 L101,140 M110,88 L119,140"/>
+        <path class="fg-body" d="M110,48 L96,76 M110,48 L124,76"/>
+        <circle class="fg-plate" cx="95" cy="80" r="5"/><circle class="fg-plate" cx="125" cy="80" r="5"/>
+      </g>
+      <g class="fg-p2">
+        <text class="fg-label" x="12" y="18">② トップ(肩の高さまで)</text>
+        <circle class="fg-head" cx="110" cy="32" r="8"/>
+        <path class="fg-body" d="M110,40 L110,88 M110,88 L101,140 M110,88 L119,140"/>
+        <path class="fg-body" d="M110,48 L75,50 M110,48 L145,50"/>
+        <circle class="fg-plate" cx="70" cy="50" r="5"/><circle class="fg-plate" cx="150" cy="50" r="5"/>
+        <ellipse class="fg-pulse" cx="98" cy="45" rx="7" ry="6"/>
+        <ellipse class="fg-pulse" cx="122" cy="45" rx="7" ry="6"/>
+      </g>
+    </svg>`,
+  },
+  fsq_thruster: {
+    feel: '①のボトムで大腿四頭筋、②の押し上げで肩(前・中部)。脚の力をバーに伝える「連動」を感じる',
+    cues: [
+      'フロントスクワットと同じく、肘を高くバーを鎖骨に乗せる',
+      'しゃがみは前ももの張りを感じる深さまで(上体は立てる)',
+      '立ち上がる勢いを殺さず、そのままバーを頭上へ押し上げる',
+      'トップでは肘を伸ばし、バーが耳の横〜やや後ろに来る位置',
+      '疲れてくると肘が下がりがち。毎レップ肘の高さをリセット',
+    ],
+    svg: `<svg viewBox="0 0 220 150">
+      <line class="fg-floor" x1="10" y1="140" x2="210" y2="140"/>
+      <g class="fg-p1">
+        <text class="fg-label" x="12" y="18">① フロントスクワット(ボトム)</text>
+        <circle class="fg-head" cx="88" cy="60" r="8"/>
+        <path class="fg-body" d="M89,68 L96,94 L74,112 L84,140"/>
+        <path class="fg-body" d="M91,74 L107,70 L115,62"/>
+        <circle class="fg-plate" cx="101" cy="69" r="10"/>
+        <ellipse class="fg-pulse" cx="84" cy="103" rx="13" ry="7"/>
+      </g>
+      <g class="fg-p2">
+        <text class="fg-label" x="12" y="18">② スラスター(頭上ロックアウト)</text>
+        <circle class="fg-head" cx="100" cy="38" r="8"/>
+        <path class="fg-body" d="M100,46 L100,90 L100,140"/>
+        <path class="fg-body" d="M100,52 L102,20"/>
+        <circle class="fg-plate" cx="102" cy="15" r="10"/>
+        <ellipse class="fg-pulse" cx="100" cy="49" rx="10" ry="6"/>
+      </g>
+    </svg>`,
+  },
+  thruster: {
+    feel: 'ボトムで大腿四頭筋、押し上げで肩(前・中部)と上腕三頭筋。脚の勢いをバーに伝える「連動」がすべて',
+    cues: [
+      'バーは鎖骨と肩の上に乗せ、肘を高く上げてフロントラックで構える',
+      '上体を立てたまま、太ももが床と平行になる深さまでしゃがむ',
+      '立ち上がる勢いを殺さず、そのままバーを頭上へ押し切る',
+      'トップは肘を伸ばし、バーが耳の横〜やや後ろに来る位置',
+      '下ろしはバーを鎖骨で受け、そのまま次のしゃがみへ(流れを切らない)',
+    ],
+    svg: `<svg viewBox="0 0 220 150">
+      <line class="fg-floor" x1="10" y1="140" x2="210" y2="140"/>
+      <g class="fg-p1">
+        <text class="fg-label" x="12" y="18">① ボトム(肘は高いまま)</text>
+        <circle class="fg-head" cx="88" cy="60" r="8"/>
+        <path class="fg-body" d="M89,68 L96,94 L74,112 L84,140"/>
+        <path class="fg-body" d="M91,74 L107,70 L115,62"/>
+        <circle class="fg-plate" cx="101" cy="69" r="10"/>
+        <ellipse class="fg-pulse" cx="84" cy="103" rx="13" ry="7"/>
+      </g>
+      <g class="fg-p2">
+        <text class="fg-label" x="12" y="18">② 頭上ロックアウト</text>
+        <circle class="fg-head" cx="100" cy="38" r="8"/>
+        <path class="fg-body" d="M100,46 L100,90 L100,140"/>
+        <path class="fg-body" d="M100,52 L102,20"/>
+        <circle class="fg-plate" cx="102" cy="15" r="10"/>
+        <ellipse class="fg-pulse" cx="100" cy="49" rx="10" ry="6"/>
+      </g>
+    </svg>`,
+  },
+  lunge: {
+    feel: '前脚の大腿四頭筋と臀部。立ち上がるとき「前脚のかかとで床を押す」意識。後ろ脚は添えるだけ',
+    cues: [
+      '足を前後に大きめに開く(狭いと膝、広いとお尻寄りに効く)',
+      '上体はまっすぐ立てたまま、真下に沈む(前に突っ込まない)',
+      '前膝はつま先と同じ向き。つま先より大きく前に出さない',
+      '後ろ膝が床すれすれに触れる直前まで下ろす',
+      '前脚のかかとで床を押して立つ。後ろ脚で蹴って戻らない',
+    ],
+    svg: `<svg viewBox="0 0 220 150">
+      <line class="fg-floor" x1="10" y1="140" x2="210" y2="140"/>
+      <g class="fg-p1">
+        <text class="fg-label" x="12" y="18">① スタート(足を前後に)</text>
+        <circle class="fg-head" cx="100" cy="32" r="8"/>
+        <path class="fg-body" d="M100,40 L100,88 M100,88 L86,140 M100,88 L116,140"/>
+        <path class="fg-body" d="M100,48 L92,86 M100,48 L108,86"/>
+        <circle class="fg-plate" cx="91" cy="90" r="5"/><circle class="fg-plate" cx="109" cy="90" r="5"/>
+      </g>
+      <g class="fg-p2">
+        <text class="fg-label" x="12" y="18">② ボトム(真下に沈む)</text>
+        <circle class="fg-head" cx="102" cy="48" r="8"/>
+        <path class="fg-body" d="M102,56 L102,100 M102,100 L128,104 L128,140 M102,100 L84,128 L60,136"/>
+        <path class="fg-body" d="M102,62 L96,98 M102,62 L110,98"/>
+        <circle class="fg-plate" cx="95" cy="102" r="5"/><circle class="fg-plate" cx="111" cy="102" r="5"/>
+        <ellipse class="fg-pulse" cx="116" cy="102" rx="11" ry="6"/>
+        <ellipse class="fg-pulse" cx="100" cy="106" rx="7" ry="6"/>
+      </g>
+    </svg>`,
+  },
+  chinup_rev: {
+    feel: '広背筋+上腕二頭筋。順手より二頭筋の関与が大きい。それでも主役は背中——「肘を腰へ」の意識は同じ',
+    cues: [
+      '手幅は肩幅程度、逆手(手のひらが自分側)で握る',
+      '肩をすくめず、肩甲骨を下げてからスタート',
+      '「肘を脇腹〜腰へ引き下ろす」意識。胸をバーに向ける',
+      'トップであごがバーを越えるまで。体を反らせすぎない',
+      '下ろしは2〜3秒。腕を伸ばし切る直前まで戻して次のレップへ',
+    ],
+    svg: `<svg viewBox="0 0 220 150">
+      <line class="fg-gear" x1="60" y1="25" x2="160" y2="25"/>
+      <line class="fg-floor" x1="60" y1="25" x2="60" y2="12"/><line class="fg-floor" x1="160" y1="25" x2="160" y2="12"/>
+      <g class="fg-p1">
+        <text class="fg-label" x="12" y="145">① ぶら下がり(逆手・肩幅)</text>
+        <circle class="fg-head" cx="110" cy="48" r="8"/>
+        <path class="fg-body" d="M100,25 L105,54 M120,25 L115,54"/>
+        <path class="fg-body" d="M110,56 L110,98 M110,98 L103,122 M110,98 L117,122"/>
+        <ellipse class="fg-pulse" cx="101" cy="66" rx="6" ry="10"/>
+        <ellipse class="fg-pulse" cx="119" cy="66" rx="6" ry="10"/>
+      </g>
+      <g class="fg-p2">
+        <text class="fg-label" x="12" y="145">② トップ(あごがバーを越える)</text>
+        <circle class="fg-head" cx="110" cy="18" r="8"/>
+        <path class="fg-body" d="M100,25 L99,38 L106,31 M120,25 L121,38 L114,31"/>
+        <path class="fg-body" d="M110,28 L110,70 M110,70 L103,94 M110,70 L117,94"/>
+        <ellipse class="fg-pulse" cx="101" cy="43" rx="6" ry="9"/>
+        <ellipse class="fg-pulse" cx="119" cy="43" rx="6" ry="9"/>
+        <ellipse class="fg-pulse" cx="102" cy="30" rx="4" ry="5"/>
+        <ellipse class="fg-pulse" cx="118" cy="30" rx="4" ry="5"/>
+      </g>
+    </svg>`,
+  },
+  latpulldown: {
+    feel: '広背筋(脇の下〜背中の外側)。腕や肩がパンパンになるなら重すぎ。「肘でお尻を触りに行く」イメージ',
+    cues: [
+      '手幅は肩幅より拳1〜2個広く、順手。太ももをパッドで固定',
+      '胸を張り、上体は10〜20度だけ後ろに傾けて固定',
+      '「バーを引く」ではなく「肘を下に引き下ろす」意識',
+      'バーは鎖骨〜胸の上部へ。首の後ろには下ろさない',
+      '戻すときこそゆっくり。広背筋が伸び切る手前で切り返す',
+    ],
+    svg: `<svg viewBox="0 0 220 150">
+      <line class="fg-floor" x1="10" y1="140" x2="210" y2="140"/>
+      <line class="fg-gear" x1="70" y1="14" x2="150" y2="14"/>
+      <g class="fg-p1">
+        <text class="fg-label" x="12" y="145">① スタート(腕は上に伸びる)</text>
+        <line class="fg-gear" x1="110" y1="14" x2="110" y2="38"/>
+        <rect class="fg-plate" x="82" y="36" width="56" height="5" rx="2.5"/>
+        <circle class="fg-head" cx="110" cy="58" r="8"/>
+        <path class="fg-body" d="M110,66 L110,104 M110,104 L92,110 M110,104 L128,110 M92,110 L92,140 M128,110 L128,140"/>
+        <path class="fg-body" d="M110,70 L94,40 M110,70 L126,40"/>
+        <ellipse class="fg-pulse" cx="102" cy="82" rx="6" ry="9"/>
+        <ellipse class="fg-pulse" cx="118" cy="82" rx="6" ry="9"/>
+      </g>
+      <g class="fg-p2">
+        <text class="fg-label" x="12" y="145">② フィニッシュ(バーは鎖骨へ)</text>
+        <line class="fg-gear" x1="110" y1="14" x2="110" y2="72"/>
+        <rect class="fg-plate" x="84" y="72" width="52" height="5" rx="2.5"/>
+        <circle class="fg-head" cx="110" cy="56" r="8"/>
+        <path class="fg-body" d="M110,64 L110,104 M110,104 L92,110 M110,104 L128,110 M92,110 L92,140 M128,110 L128,140"/>
+        <path class="fg-body" d="M110,68 L92,82 L96,74 M110,68 L128,82 L124,74"/>
+        <ellipse class="fg-pulse" cx="100" cy="86" rx="6" ry="9"/>
+        <ellipse class="fg-pulse" cx="120" cy="86" rx="6" ry="9"/>
+      </g>
+    </svg>`,
+  },
+  seatedrow: {
+    feel: '広背筋と背中の中央(肩甲骨の間)。引き切ったとき肩甲骨がぎゅっと寄る感覚。腕はただのフック',
+    cues: [
+      '胸を張って座り、膝は軽く曲げて足をプレートに固定',
+      'スタートで少しだけ前に伸び、広背筋のストレッチを感じる',
+      '「肘を後ろのポケットへ」の意識で、ハンドルをおへそへ引く',
+      '引き切りで肩甲骨を寄せて1秒キープ。上体は倒しすぎない',
+      '戻しはゆっくり。背中を丸めず、肩だけ前に伸ばす',
+    ],
+    svg: `<svg viewBox="0 0 220 150">
+      <line class="fg-floor" x1="10" y1="140" x2="210" y2="140"/>
+      <line class="fg-gear" x1="34" y1="66" x2="34" y2="140"/>
+      <line class="fg-gear" x1="52" y1="100" x2="60" y2="132"/>
+      <rect class="fg-gear" x="104" y="118" width="44" height="6" rx="2"/>
+      <g class="fg-p1">
+        <text class="fg-label" x="12" y="18">① ストレッチ(背中は丸めない)</text>
+        <circle class="fg-head" cx="106" cy="58" r="8"/>
+        <path class="fg-body" d="M124,116 L110,70"/>
+        <path class="fg-body" d="M124,116 L90,106 L60,118"/>
+        <line class="fg-gear" x1="36" y1="88" x2="70" y2="88"/>
+        <path class="fg-body" d="M110,72 L72,88"/>
+        <circle class="fg-plate" cx="71" cy="88" r="4"/>
+        <ellipse class="fg-pulse" cx="120" cy="90" rx="6" ry="11" transform="rotate(14 120 90)"/>
+      </g>
+      <g class="fg-p2">
+        <text class="fg-label" x="12" y="18">② フィニッシュ(肩甲骨を寄せる)</text>
+        <circle class="fg-head" cx="118" cy="52" r="8"/>
+        <path class="fg-body" d="M124,116 L118,62"/>
+        <path class="fg-body" d="M124,116 L90,106 L60,118"/>
+        <line class="fg-gear" x1="36" y1="88" x2="108" y2="94"/>
+        <path class="fg-body" d="M118,66 L136,84 L112,94"/>
+        <circle class="fg-plate" cx="110" cy="94" r="4"/>
+        <ellipse class="fg-pulse" cx="124" cy="82" rx="7" ry="12" transform="rotate(-6 124 82)"/>
+      </g>
+    </svg>`,
+  },
+  bentrow: {
+    feel: '広背筋と背中の中央。腰は「支え」であって主役ではない——腰が主に疲れるなら前傾しすぎか重すぎ',
+    cues: [
+      'お尻を後ろに引いて前傾45度前後。背中はまっすぐ固める',
+      'バーは肩の真下にぶら下げ、手幅は肩幅よりやや広く',
+      '「肘を天井へ」の意識で、バーをおへそ〜みぞおちへ引く',
+      '引き切りで肩甲骨を寄せる。反動で上体を起こさない',
+      '下ろしは2〜3秒。広背筋の伸びを感じたら次のレップへ',
+    ],
+    svg: `<svg viewBox="0 0 220 150">
+      <line class="fg-floor" x1="10" y1="140" x2="210" y2="140"/>
+      <g class="fg-p1">
+        <text class="fg-label" x="12" y="18">① スタート(前傾45度・背中は板)</text>
+        <circle class="fg-head" cx="74" cy="58" r="8"/>
+        <path class="fg-body" d="M81,63 L122,90 L126,116 L120,140"/>
+        <path class="fg-body" d="M88,68 L90,108"/>
+        <circle class="fg-plate" cx="90" cy="114" r="10"/>
+        <ellipse class="fg-pulse" cx="100" cy="74" rx="12" ry="6" transform="rotate(32 100 74)"/>
+      </g>
+      <g class="fg-p2">
+        <text class="fg-label" x="12" y="18">② フィニッシュ(バーをおへそへ)</text>
+        <circle class="fg-head" cx="74" cy="58" r="8"/>
+        <path class="fg-body" d="M81,63 L122,90 L126,116 L120,140"/>
+        <path class="fg-body" d="M88,68 L106,98 L110,90"/>
+        <circle class="fg-plate" cx="111" cy="88" r="10"/>
+        <ellipse class="fg-pulse" cx="98" cy="66" rx="13" ry="7" transform="rotate(32 98 66)"/>
+      </g>
+    </svg>`,
+  },
+};
+function formGuideHTML(ex) {
+  const g = FORM_GUIDES[ex.id];
+  if (!g) return '';
+  return `<div class="card" style="margin-top:12px;">
+    <h2 style="font-size:15px;margin-top:0;">📖 フォームガイド</h2>
+    <div class="fg-wrap">${g.svg}</div>
+    <div style="margin-top:8px;">${g.cues.map((c,i)=>`<div class="fg-cue"><b>${i+1}.</b> ${c}</div>`).join('')}</div>
+    <div class="fg-feel">🔴 = 効き(力・伸び)を感じているべき場所: ${g.feel}</div>
+  </div>`;
 }
 
 /* ---------- 標準的な実施重量・回数の提案 ----------
@@ -2132,22 +2559,34 @@ function renderSetEditor(el) {
   const cls = exClass(ex);
   const [repLo, repHi] = repRange(ex);
   const wStep = exStep(ex);
-  // 直近1年のベスト記録(加重: 推定1RM最高のセット / 自重: 最多レップ)
+  // 直近1年のベスト記録: セッション総重量が最大だった日と、そのセット内訳
+  // (自重種目は合計レップが最大だった日)
   let yearBest = '';
   if (!timeMode) {
     const from = addDays(today(), -365);
-    let wb = null, rb = null;
+    const cmb = ex.combo || 1;
+    const summarize = sets => {
+      const parts = [];
+      for (const s of sets) {
+        const key = `${+s.w > 0 ? s.w + 'kg' : '自重'}×${s.r}`;
+        const p = parts[parts.length - 1];
+        if (p && p.key === key) p.n++; else parts.push({ key, n: 1 });
+      }
+      return parts.map(p => p.n > 1 ? `${p.key} (${p.n}セット)` : p.key).join('・');
+    };
+    let vb = null, rb = null;
     for (const l of state.logs) {
       if (l.exId !== draft.exId || l.date < from) continue;
-      for (const s of l.sets) {
-        if (+s.w > 0) {
-          const v = rm1(+s.w, +s.r);
-          if (v && (!wb || v > wb.v)) wb = { v, w: +s.w, r: +s.r, date: l.date };
-        } else if (+s.r > 0 && (!rb || +s.r > rb.r)) rb = { r: +s.r, date: l.date };
+      if (l.sets.some(s => +s.w > 0)) {
+        const vol = l.sets.reduce((a,s)=>a+(+s.w||0)*(+s.r||0),0) * cmb;
+        if (vol > 0 && (!vb || vol > vb.v)) vb = { v: vol, sets: l.sets, date: l.date };
+      } else {
+        const tot = l.sets.reduce((a,s)=>a+(+s.r||0),0);
+        if (tot > 0 && (!rb || tot > rb.v)) rb = { v: tot, sets: l.sets, date: l.date };
       }
     }
-    if (wb) yearBest = `🏆 直近1年ベスト: 推定1RM ${fmtRM(wb.v)}kg (${wb.w}kg×${wb.r}回・${jpDate(wb.date)})`;
-    else if (rb) yearBest = `🏆 直近1年ベスト: 最多 ${rb.r}回 (${jpDate(rb.date)})`;
+    if (vb) yearBest = `🏆 直近1年ベスト(総重量): ${Math.round(vb.v).toLocaleString()}kg<br><span style="font-weight:400;font-size:11.5px;color:var(--text-secondary);">${summarize(vb.sets)} (${jpDate(vb.date)})</span>`;
+    else if (rb) yearBest = `🏆 直近1年ベスト(合計レップ): ${rb.v}回<br><span style="font-weight:400;font-size:11.5px;color:var(--text-secondary);">${summarize(rb.sets)} (${jpDate(rb.date)})</span>`;
   }
   const rirNote = cls === 'high'
     ? '🔒 高疲労種目 — 各セット<b>余力1〜2回</b>で止めるのが目安。フォームを保ったまま終える(限界まで行くと腰・関節への負担が刺激を上回りがち)。'
@@ -2208,6 +2647,7 @@ function renderSetEditor(el) {
         <div class="cell"><div class="sw" style="background:var(--heat-2)"></div><div class="lb">補助 ×0.25</div></div>
       </div>
     </div>` : ''}
+    ${formGuideHTML(ex)}
   `;
   // 推移グラフの点タップ → 値を表示
   $$('.chartdot', el).forEach(c => c.addEventListener('click', () => toast(jpDate(c.dataset.d) + ' : ' + c.dataset.v)));
